@@ -1,73 +1,161 @@
 import pandas as pd
 import numpy as np
 import re
+from sqlalchemy.orm import Session
+from datetime import datetime
 from langfuse import observe
-
-PRODUCT_FILE = r"C:\Users\hp\OneDrive\New folder\OneDrive\Desktop\products-export.xlsx"
+from app.core.models import Product
+from app.services.vector_store import index_products
 
 class ProductService:
-    def __init__(self):
-        try:
-            # Load Excel
-            self.df = pd.read_excel(PRODUCT_FILE, header=0) 
-            # Clean column names (removes spaces and makes lowercase)
-            self.df.columns = [str(col).strip().lower() for col in self.df.columns]
-            
-            # Ensure 'product name' exists and is string
-            if 'product name' in self.df.columns:
-                self.df['product name'] = self.df['product name'].astype(str)
-        except Exception as e:
-            print(f"❌ Excel Loading Error: {e}")
-            self.df = pd.DataFrame()
+    def __init__(self, db: Session):
+        self.db = db
 
     def _normalize(self, text):
-        """Standardizes text: removes symbols (®, ™), lowercase, and extra spaces"""
+        """Standardizes text: removes symbols, lowercase, and extra spaces"""
         if not text: return ""
-        # Remove special characters
         text = re.sub(r'[®™©]', '', str(text))
-        # Lowercase and strip
         return text.strip().lower()
+
+    def _clean_bool(self, val):
+        """Helper to convert various Excel formats (Yes/No, 1/0, True/False) to Boolean"""
+        if pd.isna(val): return False
+        s = str(val).strip().lower()
+        return s in ['yes', 'true', '1', '1.0', 'y', 'required']
 
     @observe(name="get_product_by_name")
     def get_product_by_name(self, name: str):
-        if not name or self.df.empty:
-            return None
-            
+        """
+        AI AGENT SYNC: Fetches real-time data from SQLite.
+        Used by chatbot to provide updated prices and stock.
+        """
+        if not name: return None
         search_term = self._normalize(name)
-
-        # 1. Create a cleaned version of the 'product name' column for searching
-        # This helps match "Cystinol akut" with "Cystinol akut®"
-        self.df['temp_clean_name'] = self.df['product name'].apply(self._normalize)
         
-        # 2. Search using 'contains' so "Paracetamol" matches the full long name in your Excel
-        mask = self.df['temp_clean_name'].str.contains(search_term, regex=False)
-        matches = self.df[mask]
+        # Search DB using fuzzy name matching
+        product = self.db.query(Product).filter(
+            Product.name.ilike(f"%{search_term}%")
+        ).first()
 
-        if matches.empty:
-            return None
+        if not product: return None
             
-        # Get the first match
-        row = matches.iloc[0].to_dict()
-
-        # 3. MAP YOUR SPECIFIC COLUMNS
-        # Your screenshot shows column 'price rec', we map it to 'price' for the agent
         return {
-            "product_id": row.get("product id", "N/A"),
-            "product_name": row.get("product name"),
-            "price": row.get("price rec", 0) # ✅ Maps 'price rec' from your screenshot
+            "product_id": product.product_id,
+            "product_name": product.name,
+            "price": product.price,
+            "stock": product.stock,
+            "prescription_required": product.prescription_required,
+            "pzn": product.pzn,
+            "package_size": product.package_size
         }
 
     @observe(name="get_all_products")
     def get_all_products(self):
-        """Return all products from Excel file"""
-        if self.df.empty:
-            return []
+        """Fetches all inventory for the Admin Dashboard table"""
+        return self.db.query(Product).order_by(Product.last_updated.desc()).all()
+
+    @observe(name="update_manual_inventory")
+    def update_product(self, product_id: str, updates: dict):
+        """Updates a single product from the Admin Dashboard table actions"""
+        product = self.db.query(Product).filter(Product.product_id == product_id).first()
+        if product:
+            if "stock" in updates: product.stock = int(updates["stock"])
+            if "price" in updates: product.price = float(updates["price"])
+            if "prescription_required" in updates: 
+                product.prescription_required = bool(updates["prescription_required"])
+            
+            product.last_updated = datetime.utcnow()
+            self.db.commit()
+            self.db.refresh(product)
+            return product
+        return None
+
+    @observe(name="bulk_upload_inventory_logic")
+    def bulk_upload(self, file_path: str):
+        """
+        EXCEL PROCESSING ENGINE:
+        1. Cleans column names and ignores blank rows.
+        2. Maps your specific columns to the Database.
+        3. Upsert logic: Update if ID exists, else Insert.
+        4. Syncs AI Vector Store so chatbot learns new names.
+        """
+        # Load Excel
+        df = pd.read_excel(file_path)
         
-        products = []
-        for _, row in self.df.iterrows():
-            products.append({
-                "product_id": row.get("product id", "N/A"),
-                "product_name": row.get("product name"),
-                "price": row.get("price rec", 0)
-            })
-        return products
+        # Clean columns: Trim whitespace and lowercase
+        df.columns = [str(col).strip().lower() for col in df.columns]
+        
+        # Drop rows where 'product id' is missing (Handles blank rows)
+        df = df.dropna(subset=['product id'])
+
+        summary = {"added": 0, "updated": 0, "failed": 0, "skipped_blank": 0}
+        vector_updates = []
+
+        for _, row in df.iterrows():
+            try:
+                # 1. Extract and Clean Data
+                raw_id = str(row.get('product id')).strip()
+                if not raw_id or raw_id.lower() == 'nan':
+                    summary["skipped_blank"] += 1
+                    continue
+
+                p_id = raw_id
+                p_name = str(row.get('product name', 'Unknown')).strip()
+                p_price = float(row.get('price rec', 0))
+                p_stock = int(row.get('stock', 0))
+                p_rx = self._clean_bool(row.get('prescription_required', False))
+                
+                # Additional fields from your Excel structure
+                p_pzn = str(row.get('pzn', '')).strip()
+                p_size = str(row.get('package size', '')).strip()
+                p_desc = str(row.get('descriptions', '')).strip()
+                p_search = str(row.get('search_name', '')).strip()
+
+                # 2. Check if product exists (UPSERT LOGIC)
+                existing = self.db.query(Product).filter(Product.product_id == p_id).first()
+                
+                if existing:
+                    # UPDATE existing record
+                    existing.name = p_name
+                    existing.price = p_price
+                    existing.stock = p_stock
+                    existing.prescription_required = p_rx
+                    existing.pzn = p_pzn
+                    existing.package_size = p_size
+                    existing.description = p_desc
+                    existing.search_name = p_search
+                    existing.last_updated = datetime.utcnow()
+                    summary["updated"] += 1
+                else:
+                    # INSERT new record
+                    new_product = Product(
+                        product_id=p_id,
+                        name=p_name,
+                        price=p_price,
+                        stock=p_stock,
+                        prescription_required=p_rx,
+                        pzn=p_pzn,
+                        package_size=p_size,
+                        description=p_desc,
+                        search_name=p_search
+                    )
+                    self.db.add(new_product)
+                    summary["added"] += 1
+                
+                # Collect for AI Vector Store sync
+                vector_updates.append({
+                    "product_id": p_id,
+                    "product_name": p_name
+                })
+                
+            except Exception as e:
+                print(f"Row Processing Error: {e}")
+                summary["failed"] += 1
+
+        self.db.commit()
+
+        # 3. CRITICAL: Sync AI Vector Store so chatbot recognizes names instantly
+        if vector_updates:
+            index_products(vector_updates)
+            
+        return summary
