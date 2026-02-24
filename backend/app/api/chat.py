@@ -32,6 +32,7 @@ async def chat(request: ChatRequest):
 
     memory.save_context({"input": request.message}, {"output": parsed})
 
-    result = await decision_agent.decide(parsed) 
+    # FIX: Pass the session_id to the decision agent
+    result = await decision_agent.decide(parsed, session_id=request.session_id) 
 
     return result

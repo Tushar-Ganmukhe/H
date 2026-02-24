@@ -11,7 +11,7 @@ class DecisionAgent:
         self.execution_agent = ExecutionAgent()
 
     @observe(name="decide_on_user_intent")
-    async def decide(self, parsed_input):
+    async def decide(self, parsed_input, session_id: str): # FIX: Added session_id parameter
         # 1. Handle string input from LLM and clean JSON code blocks
         if isinstance(parsed_input, str):
             try:
@@ -41,7 +41,7 @@ class DecisionAgent:
         if intent == "product_info":
             # Call execution agent with quantity 1 just to get price data
             data = await self.execution_agent.execute_order(
-                patient_id=1,
+                patient_id=session_id, # FIX: Replaced hardcoded 1
                 product_name=product_name,
                 quantity=1
             )
@@ -71,7 +71,7 @@ class DecisionAgent:
 
             # Safety Agent Validation
             safety = self.safety_agent.validate_order(
-                patient_id=1,
+                patient_id=session_id, # FIX: Replaced hardcoded 1
                 product_name=product_name,
                 quantity=quantity
             )
@@ -81,7 +81,7 @@ class DecisionAgent:
 
             # Final Execution (Calculate price, create ID, trigger webhook)
             execution_result = await self.execution_agent.execute_order(
-                patient_id=1,
+                patient_id=session_id, # FIX: Replaced hardcoded 1
                 product_name=product_name,
                 quantity=quantity
             )
