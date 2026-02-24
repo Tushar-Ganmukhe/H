@@ -3,15 +3,14 @@ import Login from "./pages/Login";
 import AdminDashboard from "./pages/AdminDashboard";
 import UserDashboard from "./pages/UserDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
+import "./App.css";
 
 function App() {
   return (
     <Router>
       <Routes>
-        {/* Public Login Route */}
         <Route path="/" element={<Login />} />
-
-        {/* Protected Admin Route */}
+        
         <Route 
           path="/admin" 
           element={
@@ -21,7 +20,6 @@ function App() {
           } 
         />
 
-        {/* Protected User Route (Your Chat Interface) */}
         <Route 
           path="/user" 
           element={
