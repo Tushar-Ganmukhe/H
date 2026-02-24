@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
-import { Send, Mic, Bell, Pill, User, Bot, Trash2, Loader2, LogOut, MessageSquare, ShoppingCart, Clock } from "lucide-react";
+import { Send, Mic, Bell, Pill, User, Bot, Trash2, Loader2, LogOut, MessageSquare, ShoppingCart, Clock, Volume2, VolumeX } from "lucide-react";
 
 const API_BASE = "http://127.0.0.1:8000";
 
@@ -30,6 +30,17 @@ const translations = {
   }
 };
 
+// Helper: Cleans Markdown & Emojis so the speech sounds natural
+const cleanTextForSpeech = (text) => {
+  return text
+    .replace(/(\*\*|__)(.*?)\1/g, "$2") // Remove bold
+    .replace(/(\*|_)(.*?)\1/g, "$2") // Remove italics
+    .replace(/`([^`]+)`/g, "$1") // Remove inline code
+    .replace(/#/g, "") // Remove headers
+    .replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '') // Remove emojis
+    .trim();
+};
+
 const UserDashboard = () => {
   const navigate = useNavigate();
   
@@ -39,8 +50,7 @@ const UserDashboard = () => {
   const [lang, setLang] = useState(authUser?.lang || "en");
   const t = translations[lang] || translations["en"];
 
-  // --- NEW LEVEL-1 STATES ---
-  const [view, setView] = useState("chat"); // 'chat' or 'history'
+  const [view, setView] = useState("chat"); 
   const [orders, setOrders] = useState([]);
 
   const [input, setInput] = useState("");
@@ -51,7 +61,39 @@ const UserDashboard = () => {
     }
   ]);
   const [loading, setLoading] = useState(false);
+  
+  // VOICE STATES
+  const [isListening, setIsListening] = useState(false);
+  const [isMuted, setIsMuted] = useState(false); // New state to toggle AI Speech
+  
+  const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
+
+  // Initialize Speech Recognition (User Speaking)
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onerror = (e) => {
+        console.error("Speech recognition error:", e.error);
+        setIsListening(false);
+      };
+      recognition.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        setInput((prev) => (prev ? prev + " " + transcript : transcript));
+      };
+      
+      recognitionRef.current = recognition;
+    }
+    
+    // Cleanup speech if component unmounts
+    return () => window.speechSynthesis.cancel();
+  }, []);
 
   useEffect(() => {
     if (!authUser) navigate("/");
@@ -70,13 +112,11 @@ const UserDashboard = () => {
     navigate("/");
   };
 
-  // --- NEW LEVEL-1 FUNCTION ---
   const fetchOrders = async () => {
     if (view === "history") {
       setView("chat");
       return;
     }
-    
     try {
       const patientId = authUser?.mobile || "user_1";
       const res = await axios.get(`${API_BASE}/orders/history/${patientId}`);
@@ -86,6 +126,23 @@ const UserDashboard = () => {
       console.error("Failed to fetch order history:", err);
       alert("Failed to load history. Is the backend running?");
     }
+  };
+
+  // --- NEW LEVEL-2 AI SPEECH FUNCTION ---
+  const speakText = (text, currentLang) => {
+    if (isMuted || !window.speechSynthesis) return;
+
+    window.speechSynthesis.cancel(); // Stop any current speech
+    const cleanedText = cleanTextForSpeech(text);
+    const utterance = new SpeechSynthesisUtterance(cleanedText);
+
+    // Map language to browser voice dialect
+    if (currentLang === "hi") utterance.lang = "hi-IN";
+    else if (currentLang === "mr") utterance.lang = "mr-IN";
+    else utterance.lang = "en-IN"; // Default to English (India) for local feel
+
+    utterance.rate = 1.0; // Normal speed
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleSend = async (customMessage = null) => {
@@ -101,11 +158,36 @@ const UserDashboard = () => {
         message: messageToSend,
         session_id: authUser?.mobile || "user_1",
       });
-      setMessages((prev) => [...prev, { role: "bot", text: res.data.message || "Processed." }]);
+      
+      const botReply = res.data.message || "Processed.";
+      setMessages((prev) => [...prev, { role: "bot", text: botReply }]);
+      
+      // Trigger AI Speech
+      speakText(botReply, lang);
+
     } catch (err) {
-      setMessages((prev) => [...prev, { role: "bot", text: "❌ Connection error." }]);
+      const errorMsg = "Sorry, I could not connect to the server.";
+      setMessages((prev) => [...prev, { role: "bot", text: `❌ ${errorMsg}` }]);
+      speakText(errorMsg, lang);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Voice input is not supported in this browser. Please use Chrome or Edge.");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      if (lang === "hi") recognitionRef.current.lang = "hi-IN";
+      else if (lang === "mr") recognitionRef.current.lang = "mr-IN";
+      else recognitionRef.current.lang = "en-US";
+      
+      recognitionRef.current.start();
     }
   };
 
@@ -131,7 +213,10 @@ const UserDashboard = () => {
          </div>
          <div className="mt-auto flex flex-col gap-6 items-center">
             {['en', 'hi', 'mr'].map(l => (
-              <button key={l} onClick={() => setLang(l)} className={`text-[10px] font-black uppercase ${lang === l ? "text-white underline" : "text-blue-300"}`}>{l}</button>
+              <button key={l} onClick={() => {
+                setLang(l);
+                window.speechSynthesis.cancel(); // Stop talking if language changes
+              }} className={`text-[10px] font-black uppercase ${lang === l ? "text-white underline" : "text-blue-300"}`}>{l}</button>
             ))}
             <button onClick={handleLogout} className="text-red-300 hover:text-red-100 mb-6 transition-all"><LogOut size={24}/></button>
          </div>
@@ -154,7 +239,10 @@ const UserDashboard = () => {
               <span className="text-sm uppercase tracking-wider">{view === "history" ? t.backToChat : t.historyBtn}</span>
             </button>
             {view === "chat" && (
-              <button onClick={() => setMessages([messages[0]])} className="p-4 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all border border-transparent hover:border-red-100">
+              <button onClick={() => {
+                setMessages([messages[0]]);
+                window.speechSynthesis.cancel();
+              }} className="p-4 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all border border-transparent hover:border-red-100">
                 <Trash2 size={22}/>
               </button>
             )}
@@ -196,17 +284,46 @@ const UserDashboard = () => {
                    <button onClick={() => handleSend("Tell me about Paracetamol")} className="flex-shrink-0 px-8 py-3.5 bg-indigo-50 text-indigo-600 rounded-full text-xs font-black uppercase tracking-widest hover:bg-indigo-100 border border-indigo-100 transition-all">{t.actions[0]}</button>
                    <button onClick={() => handleSend("Order 2 Paracetamol")} className="flex-shrink-0 px-8 py-3.5 bg-green-50 text-green-600 rounded-full text-xs font-black uppercase tracking-widest hover:bg-green-100 border border-green-100 transition-all">{t.actions[1]}</button>
                 </div>
-                <div className="relative group">
-                  <input
-                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-[2.5rem] px-10 py-8 pr-28 focus:outline-none focus:ring-[12px] focus:ring-blue-500/5 focus:bg-white focus:border-blue-500 transition-all text-2xl font-bold text-gray-700 shadow-inner"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                    placeholder={t.inputPlaceholder}
-                  />
-                  <button onClick={() => handleSend()} className="absolute right-4 top-4 p-6 bg-blue-600 text-white rounded-[2rem] hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 active:scale-95 disabled:bg-gray-300" disabled={loading}>
-                    <Send size={32} />
+                <div className="relative group flex gap-4 items-center">
+                  
+                  {/* MUTE TOGGLE BUTTON */}
+                  <button 
+                    onClick={() => {
+                      setIsMuted(!isMuted);
+                      if (!isMuted) window.speechSynthesis.cancel(); // Stop talking immediately if muted
+                    }} 
+                    title={isMuted ? "Unmute AI" : "Mute AI"}
+                    className={`flex-shrink-0 p-5 rounded-full transition-all duration-300 shadow-sm ${
+                      isMuted ? "bg-gray-100 text-gray-400 hover:bg-gray-200" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+                    }`}
+                  >
+                    {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
                   </button>
+
+                  {/* MIC BUTTON */}
+                  <button 
+                    onClick={toggleListening} 
+                    title="Click to Speak"
+                    className={`flex-shrink-0 p-5 rounded-full transition-all duration-300 shadow-sm ${
+                      isListening ? "bg-red-50 border-2 border-red-500 text-red-500 animate-pulse shadow-red-200" : "bg-gray-50 border-2 border-gray-100 text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50"
+                    }`}
+                  >
+                    <Mic size={28} />
+                  </button>
+
+                  <div className="relative flex-1">
+                    <input
+                      className="w-full bg-gray-50 border-2 border-gray-100 rounded-[2.5rem] px-8 py-8 pr-28 focus:outline-none focus:ring-[12px] focus:ring-blue-500/5 focus:bg-white focus:border-blue-500 transition-all text-2xl font-bold text-gray-700 shadow-inner"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                      placeholder={isListening ? "Listening..." : t.inputPlaceholder}
+                    />
+                    <button onClick={() => handleSend()} className="absolute right-4 top-4 p-6 bg-blue-600 text-white rounded-[2rem] hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 active:scale-95 disabled:bg-gray-300" disabled={loading || !input.trim()}>
+                      <Send size={32} />
+                    </button>
+                  </div>
+
                 </div>
               </div>
             </footer>
