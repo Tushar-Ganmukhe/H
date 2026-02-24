@@ -1,20 +1,22 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
-# 1. Import Database engine and Base to create tables
+# 1. Import Database engine and Base to ensure tables exist
 from app.core.database import engine, Base
+# 2. Import all Routers to keep all features connected
 from app.api import products, patients, orders, chat, refill, admin
 
-# ---------------------------------------------------------
+# -------------------------------------------------------------------------
 # DATABASE INITIALIZATION
-# This line creates the 'pharmacy.db' file and all tables
-# automatically based on the models we defined.
-# ---------------------------------------------------------
+# This creates the 'pharmacy.db' file and all required tables 
+# (Inventory, Orders, Logs) if they don't already exist.
+# -------------------------------------------------------------------------
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Agentic Pharmacy System - Pro")
 
-# ✅ CORS Setup: Essential for React to talk to FastAPI
+# ✅ CORS Setup: Essential for the React Frontend to talk to this Backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,21 +25,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Include All Routers
-# We keep your existing chat/patient routers and add the new Admin router
+# ✅ Connect All Endpoints (Routers)
+# This ensures Chat, Refill, and Orders keep working while adding Admin features
 app.include_router(chat.router)
 app.include_router(refill.router)
 app.include_router(products.router)
 app.include_router(patients.router)
 app.include_router(orders.router)
-
-# NEW: The brain of your Admin Portal
 app.include_router(admin.router)
 
 @app.get("/")
 def root():
+    """Health check endpoint to verify project status"""
     return {
-        "message": "Agentic Pharmacy Backend Running",
+        "status": "online",
         "database": "SQLite Connected",
-        "status": "Ready"
+        "features": ["AI Chat", "Refill Alerts", "Inventory Sync", "Analytics"],
+        "db_location": os.path.abspath("pharmacy.db")
     }
