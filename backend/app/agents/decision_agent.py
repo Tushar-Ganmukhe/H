@@ -1,99 +1,123 @@
 import json
+import os
 from langfuse import observe
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.safety_agent import SafetyAgent
 from app.agents.execution_agent import ExecutionAgent
 from app.agents.guardrail import validate_llm_output
+from app.services.vector_store import search_by_symptom, search_product
 
 class DecisionAgent:
 
     def __init__(self):
         self.safety_agent = SafetyAgent()
         self.execution_agent = ExecutionAgent()
+        # Internal LLM instance for translation and clarification tasks
+        self.translator_llm = ChatGroq(
+            groq_api_key=os.getenv("GROQ_API_KEY"),
+            model="llama-3.1-8b-instant",
+            temperature=0
+        )
+
+    async def _translate_task(self, text, frequency="As directed", task_type="general"):
+        """Agentic task: German-to-English Pharmacist Translator."""
+        if not text or text.lower() == "nan" or text == "":
+            return f"Medical records indicate usage: {frequency}. Please follow the instructions on the packaging."
+        
+        if task_type == "dosage":
+            prompt = f"Expert Pharmacist: Convert this dosage '{frequency}' and clinical text '{text}' into clear English steps for a patient."
+        else:
+            prompt = f"Translate this German medical description into friendly English: {text}"
+        
+        try:
+            response = await self.translator_llm.ainvoke([HumanMessage(content=prompt)])
+            return response.content
+        except:
+            return f"Usage: {frequency}. (Instruction translation unavailable)."
 
     @observe(name="decide_on_user_intent")
-    async def decide(self, parsed_input, session_id: str): # FIX: Added session_id parameter
-        # 1. Handle string input from LLM and clean JSON code blocks
+    async def decide(self, parsed_input, session_id: str):
+        # 1. Clean JSON parsing
         if isinstance(parsed_input, str):
             try:
-                # Remove markdown backticks if the LLM included them
                 clean_input = parsed_input.replace("```json", "").replace("```", "").strip()
                 parsed_input = json.loads(clean_input)
             except Exception:
-                return {"message": "I'm sorry, I'm having trouble processing that request. Could you please specify the medicine name and quantity?"}
+                return {"message": "Could you please clarify the medicine name or symptom?"}
 
-        # Extract core fields from LLM extraction
         intent = parsed_input.get("intent")
         product_name = parsed_input.get("product_name")
         quantity = parsed_input.get("quantity")
         friendly_msg = parsed_input.get("friendly_response", "")
 
-        # 2. Handle GREETINGS or GENERAL QUESTIONS
-        if intent == "unknown" or not intent:
-            return {"message": friendly_msg or "Hello! I'm your Pharmacy Assistant. How can I help you with your medications today?"}
+        # LOG FOR TERMINAL TRACKING
+        print(f"⚡ [INTENT ROUTING]: Processing '{intent}' | Product: '{product_name}'")
 
-        # 3. Validation: If we are missing a product name for a specific request
-        if not product_name:
-            return {"message": friendly_msg or "Which medicine are you inquiring about?"}
+        # --- GLOBAL RESOLVER STEP (FIXED ATTRIBUTE ERROR) ---
+        resolved_name = product_name
+        if product_name:
+            resolved_name = search_product(product_name) or product_name
+            print(f"🔍 [GLOBAL RESOLVER]: '{product_name}' resolved to '{resolved_name}'")
 
-        # ---------------------------------------------------------
-        # CASE A: PRODUCT INFO / PRICE CHECK
-        # ---------------------------------------------------------
-        if intent == "product_info":
-            # Call execution agent with quantity 1 just to get price data
-            data = await self.execution_agent.execute_order(
-                patient_id=session_id, # FIX: Replaced hardcoded 1
-                product_name=product_name,
-                quantity=1
-            )
+        if not resolved_name and intent != "reorder_last" and intent != "symptom_recommendation":
+            return {"message": friendly_msg or "I'm ready. Which medicine are we discussing today?"}
 
-            if not data.get("approved"):
-                return {"message": f"I checked our inventory, but I couldn't find **{product_name}**. Please double-check the spelling!"}
-
-            # Get the price from the 'order' object (calculated from 'price rec' in Excel)
-            price = data.get("order", {}).get("total_price", 0)
-            
-            return {
-                "message": f"🔍 **Medicine Information**\n\nThe current price for **{product_name}** is **${price}** per unit.\n\nWould you like me to place an order for you?"
-            }
-
-        # ---------------------------------------------------------
-        # CASE B: PLACING AN ORDER
-        # ---------------------------------------------------------
+        # --- INTENT: ORDER ---
         if intent == "order":
-            # Check if quantity is missing
-            if parsed_input.get("missing") == "quantity" or not quantity:
-                return {"message": f"I've found **{product_name}** in our system. How many units or strips would you like to order?"}
-
-            # Guardrail Validation (Check for reasonable limits)
-            valid, reason = validate_llm_output(parsed_input)
-            if not valid:
-                return {"message": f"⚠️ **Order Notice**: {reason}"}
-
-            # Safety Agent Validation
-            safety = self.safety_agent.validate_order(
-                patient_id=session_id, # FIX: Replaced hardcoded 1
-                product_name=product_name,
-                quantity=quantity
-            )
-
+            qty = quantity or 1
+            safety = self.safety_agent.validate_order(patient_id=session_id, product_name=resolved_name, quantity=qty)
             if not safety["approved"]:
-                return {"message": f"❌ **Safety Check Failed**: {safety['reason']}"}
-
-            # Final Execution (Calculate price, create ID, trigger webhook)
-            execution_result = await self.execution_agent.execute_order(
-                patient_id=session_id, # FIX: Replaced hardcoded 1
-                product_name=product_name,
-                quantity=quantity
-            )
-
-            if execution_result.get("approved"):
-                total = execution_result['order']['total_price']
-                order_id = execution_result['order']['order_id']
+                return {"message": f"❌ **Safety Block**: {safety['reason']}"}
+            
+            res = await self.execution_agent.execute_order(patient_id=session_id, product_name=resolved_name, quantity=qty)
+            if res.get("approved"):
+                order_id = res['order']['order_id']
+                total = res['order']['total_price']
                 return {
-                    "message": f"✅ **Order Confirmed**\n\nI have successfully placed your order for **{quantity}x {product_name}**.\n\n**Total:** ${total}\n**Order ID:** `{order_id}`\n\nYour medicine will be prepared for delivery shortly."
+                    "message": f"✅ **Order Confirmed**\n\nSuccessfully placed your order for **{qty}x {resolved_name}**.\n\n**Total:** ${total}\n**Order ID:** `{order_id}`"
                 }
-            else:
-                return {"message": f"❌ **Fulfillment Error**: {execution_result.get('error', 'I could not process the order at this time.')}"}
+            return {"message": f"❌ **Fulfillment Error**: {res.get('error')}"}
 
-        # Fallback for any other cases
-        return {"message": friendly_msg or "I'm here to help with your pharmacy needs. You can ask me for medicine prices or to place an order."}
+        # --- INTENT: REORDER LAST ---
+        if intent == "reorder_last":
+            last_order = self.execution_agent.order_service.get_last_order(session_id)
+            if last_order:
+                return {
+                    "message": f"🔄 **Fast Reorder**\n\nI found your last order: **{last_order.product_name}** (Qty: {last_order.quantity}). Would you like me to place the same order for you now? reply with order it "
+                }
+            return {"message": "No previous orders found in your account history."}
+
+        # --- INTENT: SYMPTOM RECOMMENDATION ---
+        if intent == "symptom_recommendation":
+            symptom = parsed_input.get("symptom") or "your symptoms"
+            recommended = search_by_symptom(symptom)
+            if recommended and recommended != "None":
+                product = self.execution_agent.product_service.get_product_by_name(recommended)
+                return {"message": f"👨‍⚕️ **Recommendation**\n\nFor '{symptom}', I suggest **{recommended}**. It costs **${product['price']}**. Shall I explain how it works?"}
+            return {"message": f"I couldn't find a matching medicine for '{symptom}'. Please consult our pharmacist."}
+
+        # --- INTENT: DOSAGE INSTRUCTION ---
+        if intent == "dosage_instruction":
+            product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
+            if product_data:
+                instruction = await self._translate_task(product_data.get("description", ""), product_data.get("dosage_frequency", "As directed"), "dosage")
+                return {"message": f"⏲️ **Dosage for {resolved_name}**\n\n{instruction}"}
+            return {"message": f"I couldn't retrieve dosage instructions for {resolved_name}."}
+
+        # --- INTENT: PRODUCT DESCRIPTION ---
+        if intent == "product_description":
+            product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
+            if product_data:
+                english_desc = await self._translate_task(product_data.get("description", ""))
+                return {"message": f"📖 **Medicine Details: {resolved_name}**\n\n{english_desc}"}
+            return {"message": f"I don't have a medical description for {resolved_name}."}
+
+        # --- INTENT: PRODUCT INFO ---
+        if intent == "product_info":
+            product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
+            if product_data:
+                return {"message": f"🔍 **Price Check**\n\n**{resolved_name}** is currently available at **${product_data['price']}** per unit."}
+            return {"message": f"I couldn't find **{resolved_name}** in our current inventory."}
+
+        return {"message": friendly_msg or "How else can I help you today?"}

@@ -16,23 +16,38 @@ class ChatRequest(BaseModel):
 @router.post("")
 @observe(name="chat_endpoint")
 async def chat(request: ChatRequest):
-    # Tell Langfuse to group these logs under the React frontend's session_id
+    # Sync Trace with Session ID (Mobile Number)
     client = get_client()
     client.update_current_trace(
         session_id=request.session_id,
-        user_id="react_frontend_user" 
+        user_id=f"user_{request.session_id}" 
     )
 
+    # 1. Load context from session-based memory
     memory = get_memory(request.session_id)
-    history = memory.load_memory_variables({}).get("history", "")
+    # Fetch last 10 turns for deep context
+    history_vars = memory.load_memory_variables({})
+    history = history_vars.get("history", "")
 
-    enriched_message = f"History: {history}\nUser: {request.message}"
+    # 2. Build Enriched turn-labeled prompt
+    enriched_message = f"""
+--- CONVERSATION HISTORY ---
+{history}
 
-    parsed = parse_user_message(enriched_message)
+--- CURRENT USER QUERY ---
+USER: {request.message}
+"""
 
-    memory.save_context({"input": request.message}, {"output": parsed})
+    # 3. Process through Context-Aware NLP Agent
+    parsed_response = parse_user_message(enriched_message)
 
-    # FIX: Pass the session_id to the decision agent
-    result = await decision_agent.decide(parsed, session_id=request.session_id) 
+    # 4. Save User input and LLM's interpretation into turn history
+    memory.save_context(
+        {"input": request.message}, 
+        {"output": parsed_response}
+    )
+
+    # 5. Route to Decision Agent for Action
+    result = await decision_agent.decide(parsed_response, session_id=request.session_id) 
 
     return result
