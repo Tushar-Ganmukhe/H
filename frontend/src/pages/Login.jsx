@@ -1,112 +1,66 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Phone, Lock, AlertCircle, LogIn, Pill, ShieldCheck } from "lucide-react";
-
-const translations = {
-  en: {
-    title: "Smart Pharmacy Management.",
-    subtitle: "Real-time inventory, AI assistance, and advanced analytics.",
-    login: "Login",
-    mobile: "Mobile Number",
-    password: "Password",
-    btn: "Login Securely",
-    demo: "Demo Accounts",
-    error: "Invalid mobile number or password."
-  },
-  hi: {
-    title: "स्मार्ट फार्मेसी प्रबंधन।",
-    subtitle: "वास्तविक समय सूची, एआई सहायता और उन्नत विश्लेषण।",
-    login: "लॉगिन",
-    mobile: "मोबाइल नंबर",
-    password: "पासवर्ड",
-    btn: "सुरक्षित लॉगिन करें",
-    demo: "डेमो अकाउंट",
-    error: "अमान्य मोबाइल नंबर या पासवर्ड।"
-  },
-  mr: {
-    title: "स्मार्ट फार्मसी व्यवस्थापन।",
-    subtitle: "रिअल-टाइम इन्व्हेंटरी, एआय सहाय्य आणि प्रगत विश्लेषण.",
-    login: "लॉगिन",
-    mobile: "मोबाईल नंबर",
-    password: "पासवर्ड",
-    btn: "सुरक्षित लॉगिन करा",
-    demo: "डेमो खाती",
-    error: "अवैध मोबाईल नंबर किंवा पासवर्ड."
-  }
-};
+import axios from "axios";
+import { Phone, UserPlus, LogIn, Pill, User, ShieldCheck, AlertCircle } from "lucide-react";
 
 const Login = () => {
-  const [lang, setLang] = useState("en");
-  const [mobile, setMobile] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const navigate = useNavigate();
+  const [isRegister, setIsRegister] = useState(false);
+  const [formData, setFormData] = useState({ name: "", mobile: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const t = translations[lang];
-
-  const handleLogin = (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
     setError("");
-    // Check credentials
-    if ((mobile === "9999999999" && password === "admin123") || (mobile === "8888888888" && password === "user123")) {
-      const role = mobile === "9999999999" ? "admin" : "user";
-      localStorage.setItem("authUser", JSON.stringify({ 
-        mobile, 
-        role, 
-        name: role === 'admin' ? 'System Admin' : 'Regular User',
-        lang 
-      }));
-      navigate(role === "admin" ? "/admin" : "/user");
-    } else {
-      setError(t.error);
+    setLoading(true);
+    try {
+      const endpoint = isRegister ? "/auth/register" : "/auth/login";
+      const res = await axios.post(`http://localhost:8000${endpoint}`, formData);
+      
+      localStorage.setItem("authUser", JSON.stringify(res.data));
+      if (res.data.role === "admin") navigate("/admin");
+      else navigate("/user");
+    } catch (err) {
+      setError(err.response?.data?.detail || "Authentication Failed");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex h-screen w-screen bg-white overflow-hidden relative">
-      {/* Language Toggle */}
-      <div className="absolute top-8 right-8 z-50 flex gap-2 bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-gray-100 shadow-xl">
-        {['en', 'hi', 'mr'].map((l) => (
-          <button key={l} onClick={() => setLang(l)} 
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${lang === l ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-50"}`}>
-            {l}
+    <div className="h-screen w-screen flex items-center justify-center bg-[#0F172A] p-6">
+      <div className="w-full max-w-md bg-[#1E293B] rounded-[3rem] p-12 shadow-2xl border border-slate-800">
+        <div className="flex flex-col items-center mb-10 text-center">
+          <div className="bg-blue-600 p-4 rounded-3xl text-white mb-6 shadow-xl shadow-blue-500/20"><Pill size={40}/></div>
+          <h2 className="text-3xl font-black text-white tracking-tight">Pharmacy AI</h2>
+          <p className="text-slate-400 font-bold mt-2 uppercase tracking-widest text-[10px]">Level-3 Agentic System</p>
+        </div>
+
+        <form onSubmit={handleAuth} className="space-y-4">
+          {isRegister && (
+            <div className="relative group">
+              <User className="absolute left-5 top-5 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={20}/>
+              <input required className="w-full bg-slate-900 border-2 border-slate-800 rounded-2xl py-5 pl-14 pr-6 text-white font-bold focus:border-blue-500 outline-none transition-all" 
+                placeholder="Full Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})}/>
+            </div>
+          )}
+          <div className="relative group">
+            <Phone className="absolute left-5 top-5 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={20}/>
+            <input required className="w-full bg-slate-900 border-2 border-slate-800 rounded-2xl py-5 pl-14 pr-6 text-white font-bold focus:border-blue-500 outline-none transition-all" 
+              placeholder="Mobile Number" value={formData.mobile} onChange={e => setFormData({...formData, mobile: e.target.value})}/>
+          </div>
+
+          {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-xs font-bold flex items-center gap-2 animate-pulse"><AlertCircle size={16}/>{error}</div>}
+
+          <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-3xl font-black text-sm uppercase tracking-[0.2em] mt-8 shadow-xl shadow-blue-500/10 transition-all flex items-center justify-center gap-3">
+            {loading ? "..." : isRegister ? <><UserPlus size={20}/> Create Account</> : <><LogIn size={20}/> Sign In</>}
           </button>
-        ))}
-      </div>
+        </form>
 
-      {/* Left Decoration */}
-      <div className="hidden lg:flex w-1/2 bg-blue-600 items-center justify-center p-12 relative overflow-hidden">
-        <div className="relative z-10 text-white max-w-lg">
-          <div className="bg-white/20 p-4 rounded-3xl w-fit mb-8 backdrop-blur-md"><Pill size={48} /></div>
-          <h1 className="text-6xl font-black tracking-tighter mb-6 leading-tight">{t.title}</h1>
-          <p className="text-blue-100 text-xl font-medium opacity-90">{t.subtitle}</p>
-        </div>
-        <div className="absolute top-[-10%] left-[-10%] w-80 h-80 bg-blue-500 rounded-full blur-3xl opacity-50"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-700 rounded-full blur-3xl opacity-50"></div>
-      </div>
-
-      {/* Right Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-[#F8FAFC]">
-        <div className="max-w-md w-full">
-          <h2 className="text-4xl font-black text-gray-900 mb-2 tracking-tight">{t.login}</h2>
-          <form onSubmit={handleLogin} className="space-y-6 mt-10">
-            {error && <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm font-bold flex items-center gap-3 border border-red-100"><AlertCircle size={20} /> {error}</div>}
-            
-            <div className="space-y-2">
-              <label className="text-sm font-black text-gray-700 uppercase tracking-wider ml-1">{t.mobile}</label>
-              <input type="text" value={mobile} onChange={(e) => setMobile(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl px-6 py-4 focus:border-blue-600 outline-none font-bold text-gray-700 shadow-sm transition-all" placeholder="9999999999" />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-black text-gray-700 uppercase tracking-wider ml-1">{t.password}</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl px-6 py-4 focus:border-blue-600 outline-none font-bold text-gray-700 shadow-sm transition-all" placeholder="••••••••" />
-            </div>
-
-            <button type="submit" className="w-full bg-blue-600 text-white font-black rounded-2xl py-5 flex items-center justify-center gap-3 hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 active:scale-95 text-lg">
-              <LogIn size={22} /> {t.btn}
-            </button>
-          </form>
-        </div>
+        <button onClick={() => setIsRegister(!isRegister)} className="w-full text-slate-500 font-bold text-xs mt-8 hover:text-blue-400 transition-colors">
+          {isRegister ? "Already have an account? Sign In" : "New Patient? Register Here"}
+        </button>
       </div>
     </div>
   );

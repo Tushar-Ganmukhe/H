@@ -2,21 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
-# 1. Import Database engine and Base to ensure tables exist
 from app.core.database import engine, Base
-# 2. Import all Routers to keep all features connected
-from app.api import products, patients, orders, chat, refill, admin
+from app.api import products, patients, orders, chat, refill, admin, auth
 
-# -------------------------------------------------------------------------
-# DATABASE INITIALIZATION
-# This creates the 'pharmacy.db' file and all required tables 
-# (Inventory, Orders, Logs) if they don't already exist.
-# -------------------------------------------------------------------------
+# Critical: Creates 'patients' and 'orders' tables on startup
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Agentic Pharmacy System - Pro")
 
-# ✅ CORS Setup: Essential for the React Frontend to talk to this Backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,8 +18,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Connect All Endpoints (Routers)
-# This ensures Chat, Refill, and Orders keep working while adding Admin features
+# Connect Routers (Ensure auth is included)
+app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(refill.router)
 app.include_router(products.router)
@@ -36,10 +29,4 @@ app.include_router(admin.router)
 
 @app.get("/")
 def root():
-    """Health check endpoint to verify project status"""
-    return {
-        "status": "online",
-        "database": "SQLite Connected",
-        "features": ["AI Chat", "Refill Alerts", "Inventory Sync", "Analytics"],
-        "db_location": os.path.abspath("pharmacy.db")
-    }
+    return {"status": "online", "mode": "Level-3 Hybrid Persistence"}
