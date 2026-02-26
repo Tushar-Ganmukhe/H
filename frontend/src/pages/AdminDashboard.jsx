@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { 
-  ShieldCheck, LogOut, Upload, Save, Edit2, TrendingUp, Package, 
+  ShieldCheck, Upload, Save, Edit2, TrendingUp, Package, 
   AlertCircle, CheckCircle, X, BarChart3, LineChart as LineChartIcon,
   BellRing, Calendar, User as UserIcon, MessageCircle, Mail
 } from "lucide-react";
@@ -116,6 +116,21 @@ const AdminDashboard = () => {
     } catch (err) { alert("Error saving product."); }
   };
 
+  // --- NEW: HANDLE NOTIFICATIONS ---
+  const handleNotify = async (patientId, product, type) => {
+    setUploadStatus({ type: "loading", msg: `Sending ${type} to ${patientId}...` });
+    try {
+      await axios.post(`${API_BASE}/refill/notify`, {
+        patient_id: patientId,
+        product_name: product,
+        message_type: type
+      });
+      setUploadStatus({ type: "success", msg: `✅ ${type} Sent Successfully!` });
+    } catch (err) {
+      setUploadStatus({ type: "error", msg: "❌ Failed to send notification." });
+    }
+  };
+
   const handleLogout = () => { localStorage.removeItem("authUser"); navigate("/"); };
 
   return (
@@ -149,9 +164,9 @@ const AdminDashboard = () => {
       {/* MAIN VIEW */}
       <main className="flex-1 overflow-y-auto p-10">
         {uploadStatus && (
-          <div className={`mb-8 p-5 rounded-3xl flex items-center justify-between border shadow-sm animate-in zoom-in ${uploadStatus.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+          <div className={`mb-8 p-5 rounded-3xl flex items-center justify-between border shadow-sm animate-in zoom-in ${uploadStatus.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : uploadStatus.type === 'error' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
             <span className="font-bold flex items-center gap-2">
-              {uploadStatus.type === 'success' ? <CheckCircle size={18}/> : <AlertCircle size={18}/>}
+              {uploadStatus.type === 'success' ? <CheckCircle size={18}/> : uploadStatus.type === 'error' ? <AlertCircle size={18}/> : <Package size={18} className="animate-spin"/>}
               {uploadStatus.msg}
             </span>
             <button onClick={() => setUploadStatus(null)}><X size={20}/></button>
@@ -234,8 +249,8 @@ const AdminDashboard = () => {
                       <td className="px-10 py-8 uppercase text-[10px] font-black tracking-widest text-orange-400">{alert.message}</td>
                       <td className="px-10 py-8 text-right">
                         <div className="flex justify-end gap-2">
-                          <button className="p-3 bg-green-50 text-green-600 rounded-xl hover:bg-green-600 hover:text-white transition-all" title="WhatsApp Reminder"><MessageCircle size={20}/></button>
-                          <button className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all" title="Send Email"><Mail size={20}/></button>
+                          <button onClick={() => handleNotify(alert.patient_id, alert.product_name, 'whatsapp')} className="p-3 bg-green-50 text-green-600 rounded-xl hover:bg-green-600 hover:text-white transition-all shadow-sm hover:shadow-md" title="WhatsApp Reminder"><MessageCircle size={20}/></button>
+                          <button onClick={() => handleNotify(alert.patient_id, alert.product_name, 'email')} className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm hover:shadow-md" title="Send Email"><Mail size={20}/></button>
                         </div>
                       </td>
                     </tr>

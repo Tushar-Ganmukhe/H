@@ -59,5 +59,6 @@ class RefillAgent:
                         })
             except: continue
 
+        # Deduplicate alerts based on patient + product
         unique_alerts = { (a['patient_id'], a['product_name']): a for a in alerts }.values()
         return sorted(list(unique_alerts), key=lambda x: x['expected_refill_date'], reverse=True)

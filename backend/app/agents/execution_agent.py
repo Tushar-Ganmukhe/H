@@ -1,12 +1,11 @@
-import httpx
+import os
 from langfuse import observe
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 from app.services.vector_store import search_product
 from app.core.database import SessionLocal
-
-# Configuration for Mock Fulfillment
-WAREHOUSE_WEBHOOK = "http://localhost:9000/fulfill"
+# NEW: Import the robust tools
+from app.core.external_tools import ExternalTools
 
 class ExecutionAgent:
     def __init__(self):
@@ -28,6 +27,7 @@ class ExecutionAgent:
         2. Queries SQLite DB (Real-time price & stock).
         3. Validates stock.
         4. Processes order via OrderService.
+        5. Triggers Warehouse & Notification Tools.
         """
         if not product_name or str(product_name).strip() == "":
              return {
@@ -68,26 +68,32 @@ class ExecutionAgent:
         if "error" in order_result:
             return {"approved": False, "error": order_result["error"]}
 
-        # 6. Trigger Warehouse Webhook (Mock Fulfillment)
-        webhook_payload = {
-            "order_id": order_result["order_id"],
-            "product": product_data["product_name"],
-            "quantity": quantity,
-            "total_price": total_price
-        }
+        # --- STEP 6: REAL WORLD TOOL USE (Replaces Old Webhook) ---
+        
+        # A. Trigger Warehouse
+        warehouse_res = ExternalTools.trigger_warehouse_fulfillment(
+            order_id=order_result["order_id"],
+            product_name=product_data["product_name"],
+            quantity=quantity
+        )
 
-        try:
-            async with httpx.AsyncClient() as client:
-               await client.post(WAREHOUSE_WEBHOOK, json=webhook_payload, timeout=1.0)
-        except Exception as e:
-            # We still finish the order even if the mock warehouse is offline
-            print(f"⚠️ Fulfillment Webhook skipped: {e}")
+        # B. Send WhatsApp Confirmation
+        # We assume patient_id is the mobile number based on auth logic
+        msg_body = (
+            f"✅ Order Confirmed!\n"
+            f"Order ID: {order_result['order_id'][:8]}\n"
+            f"Medicine: {product_data['product_name']} (x{quantity})\n"
+            f"Total: ${total_price}\n\n"
+            f"Your package has been dispatched. 🚚"
+        )
+        ExternalTools.send_whatsapp_message(to_mobile=str(patient_id), message_body=msg_body)
 
         # 7. Final Response back to Decision Agent
         return {
             "approved": True,
             "message": "Order processed successfully",
-            "order": order_result
+            "order": order_result,
+            "fulfillment": warehouse_res
         }
     
     def __del__(self):
