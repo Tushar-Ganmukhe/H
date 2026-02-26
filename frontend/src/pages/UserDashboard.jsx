@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
-import { Send, Mic, Bell, Pill, User, Bot, Trash2, Loader2, LogOut, MessageSquare, ShoppingCart, Clock, Volume2, VolumeX } from "lucide-react";
+import { Send, Mic, Pill, User, Bot, Trash2, Loader2, LogOut, MessageSquare, ShoppingCart, Clock, Volume2, VolumeX, Paperclip, X } from "lucide-react";
 
 const API_BASE = "http://127.0.0.1:8000";
 
@@ -64,12 +64,16 @@ const UserDashboard = () => {
   
   // VOICE STATES
   const [isListening, setIsListening] = useState(false);
-  const [isMuted, setIsMuted] = useState(false); // New state to toggle AI Speech
+  const [isMuted, setIsMuted] = useState(false); 
+  
+  // IMAGE UPLOAD STATE
+  const [selectedImage, setSelectedImage] = useState(null);
+  const fileInputRef = useRef(null);
   
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Initialize Speech Recognition (User Speaking)
+  // Initialize Speech Recognition
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -91,7 +95,6 @@ const UserDashboard = () => {
       recognitionRef.current = recognition;
     }
     
-    // Cleanup speech if component unmounts
     return () => window.speechSynthesis.cancel();
   }, []);
 
@@ -105,7 +108,7 @@ const UserDashboard = () => {
 
   useEffect(() => {
     if (view === "chat") scrollToBottom();
-  }, [messages, loading, view]);
+  }, [messages, loading, view, selectedImage]);
 
   const handleLogout = () => {
     localStorage.removeItem("authUser");
@@ -128,41 +131,68 @@ const UserDashboard = () => {
     }
   };
 
-  // --- NEW LEVEL-2 AI SPEECH FUNCTION ---
   const speakText = (text, currentLang) => {
     if (isMuted || !window.speechSynthesis) return;
 
-    window.speechSynthesis.cancel(); // Stop any current speech
+    window.speechSynthesis.cancel(); 
     const cleanedText = cleanTextForSpeech(text);
     const utterance = new SpeechSynthesisUtterance(cleanedText);
 
-    // Map language to browser voice dialect
     if (currentLang === "hi") utterance.lang = "hi-IN";
     else if (currentLang === "mr") utterance.lang = "mr-IN";
-    else utterance.lang = "en-IN"; // Default to English (India) for local feel
+    else utterance.lang = "en-IN"; 
 
-    utterance.rate = 1.0; // Normal speed
+    utterance.rate = 1.0; 
     window.speechSynthesis.speak(utterance);
+  };
+
+  // --- HANDLE IMAGE UPLOAD ---
+  const handleFileClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result); // Sets Base64 string
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const clearImage = () => {
+    setSelectedImage(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSend = async (customMessage = null) => {
     const messageToSend = customMessage || input;
-    if (!messageToSend.trim()) return;
+    if (!messageToSend.trim() && !selectedImage) return;
 
-    setMessages((prev) => [...prev, { role: "user", text: messageToSend }]);
+    // Add user message to UI
+    const newUserMsg = { 
+      role: "user", 
+      text: messageToSend,
+      image: selectedImage // Store image for local UI display if needed
+    };
+    
+    setMessages((prev) => [...prev, newUserMsg]);
     setInput("");
+    const imageToSend = selectedImage; // Capture current image before clearing
+    clearImage(); // Clear image from input immediately
     setLoading(true);
 
     try {
       const res = await axios.post(`${API_BASE}/chat`, {
         message: messageToSend,
         session_id: authUser?.mobile || "user_1",
+        image: imageToSend // Pass base64 string to API
       });
       
       const botReply = res.data.message || "Processed.";
       setMessages((prev) => [...prev, { role: "bot", text: botReply }]);
-      
-      // Trigger AI Speech
       speakText(botReply, lang);
 
     } catch (err) {
@@ -215,7 +245,7 @@ const UserDashboard = () => {
             {['en', 'hi', 'mr'].map(l => (
               <button key={l} onClick={() => {
                 setLang(l);
-                window.speechSynthesis.cancel(); // Stop talking if language changes
+                window.speechSynthesis.cancel(); 
               }} className={`text-[10px] font-black uppercase ${lang === l ? "text-white underline" : "text-blue-300"}`}>{l}</button>
             ))}
             <button onClick={handleLogout} className="text-red-300 hover:text-red-100 mb-6 transition-all"><LogOut size={24}/></button>
@@ -249,7 +279,6 @@ const UserDashboard = () => {
           </div>
         </header>
 
-        {/* CONDITIONALLY RENDER CHAT OR HISTORY */}
         {view === "chat" ? (
           <>
             <main className="flex-1 overflow-y-auto px-10 py-10">
@@ -261,6 +290,14 @@ const UserDashboard = () => {
                         {msg.role === "user" ? <User size={28} /> : <Bot size={28} />}
                       </div>
                       <div className={`p-8 rounded-[2.5rem] shadow-sm text-xl ${msg.role === "user" ? "bg-blue-600 text-white rounded-tr-none shadow-blue-100" : "bg-white text-gray-800 border border-gray-100 rounded-tl-none"}`}>
+                        
+                        {/* Render User Uploaded Image if exists */}
+                        {msg.image && (
+                          <div className="mb-4">
+                            <img src={msg.image} alt="Prescription" className="max-w-full h-auto rounded-xl border-2 border-white/30" style={{ maxHeight: '200px' }} />
+                          </div>
+                        )}
+
                         <div className="prose prose-lg max-w-none prose-p:m-0 font-medium whitespace-pre-wrap prose-headings:text-inherit prose-strong:text-inherit">
                           <ReactMarkdown>{msg.text}</ReactMarkdown>
                         </div>
@@ -280,19 +317,32 @@ const UserDashboard = () => {
 
             <footer className="bg-white border-t border-gray-100 p-10">
               <div className="w-full">
+                {/* PREVIEW AREA FOR UPLOADED IMAGE */}
+                {selectedImage && (
+                  <div className="mb-4 flex items-center gap-4 animate-in slide-in-from-bottom-2">
+                    <div className="relative">
+                      <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-xl border-2 border-blue-200 shadow-md" />
+                      <button onClick={clearImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow hover:bg-red-600">
+                        <X size={12} />
+                      </button>
+                    </div>
+                    <span className="text-sm text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-lg">Image attached</span>
+                  </div>
+                )}
+
                 <div className="flex gap-4 mb-8 overflow-x-auto scrollbar-hide pb-2">
                    <button onClick={() => handleSend("Tell me about Paracetamol")} className="flex-shrink-0 px-8 py-3.5 bg-indigo-50 text-indigo-600 rounded-full text-xs font-black uppercase tracking-widest hover:bg-indigo-100 border border-indigo-100 transition-all">{t.actions[0]}</button>
                    <button onClick={() => handleSend("Order 2 Paracetamol")} className="flex-shrink-0 px-8 py-3.5 bg-green-50 text-green-600 rounded-full text-xs font-black uppercase tracking-widest hover:bg-green-100 border border-green-100 transition-all">{t.actions[1]}</button>
                 </div>
+                
                 <div className="relative group flex gap-4 items-center">
                   
                   {/* MUTE TOGGLE BUTTON */}
                   <button 
                     onClick={() => {
                       setIsMuted(!isMuted);
-                      if (!isMuted) window.speechSynthesis.cancel(); // Stop talking immediately if muted
+                      if (!isMuted) window.speechSynthesis.cancel(); 
                     }} 
-                    title={isMuted ? "Unmute AI" : "Mute AI"}
                     className={`flex-shrink-0 p-5 rounded-full transition-all duration-300 shadow-sm ${
                       isMuted ? "bg-gray-100 text-gray-400 hover:bg-gray-200" : "bg-blue-50 text-blue-600 hover:bg-blue-100"
                     }`}
@@ -300,10 +350,27 @@ const UserDashboard = () => {
                     {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
                   </button>
 
+                  {/* FILE UPLOAD BUTTON */}
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleFileChange} 
+                    accept="image/*" 
+                    className="hidden" 
+                  />
+                  <button 
+                    onClick={handleFileClick}
+                    title="Upload Prescription"
+                    className={`flex-shrink-0 p-5 rounded-full transition-all duration-300 shadow-sm ${
+                      selectedImage ? "bg-blue-600 text-white shadow-blue-300" : "bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                    }`}
+                  >
+                    <Paperclip size={24} />
+                  </button>
+
                   {/* MIC BUTTON */}
                   <button 
                     onClick={toggleListening} 
-                    title="Click to Speak"
                     className={`flex-shrink-0 p-5 rounded-full transition-all duration-300 shadow-sm ${
                       isListening ? "bg-red-50 border-2 border-red-500 text-red-500 animate-pulse shadow-red-200" : "bg-gray-50 border-2 border-gray-100 text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50"
                     }`}
@@ -319,7 +386,7 @@ const UserDashboard = () => {
                       onKeyDown={(e) => e.key === "Enter" && handleSend()}
                       placeholder={isListening ? "Listening..." : t.inputPlaceholder}
                     />
-                    <button onClick={() => handleSend()} className="absolute right-4 top-4 p-6 bg-blue-600 text-white rounded-[2rem] hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 active:scale-95 disabled:bg-gray-300" disabled={loading || !input.trim()}>
+                    <button onClick={() => handleSend()} className="absolute right-4 top-4 p-6 bg-blue-600 text-white rounded-[2rem] hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 active:scale-95 disabled:bg-gray-300" disabled={loading || (!input.trim() && !selectedImage)}>
                       <Send size={32} />
                     </button>
                   </div>

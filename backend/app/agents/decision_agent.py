@@ -37,7 +37,7 @@ class DecisionAgent:
             return f"Usage: {frequency}. (Instruction translation unavailable)."
 
     @observe(name="decide_on_user_intent")
-    async def decide(self, parsed_input, session_id: str):
+    async def decide(self, parsed_input, session_id: str, image_data: str = None):
         # 1. Clean JSON parsing
         if isinstance(parsed_input, str):
             try:
@@ -54,7 +54,7 @@ class DecisionAgent:
         # LOG FOR TERMINAL TRACKING
         print(f"⚡ [INTENT ROUTING]: Processing '{intent}' | Product: '{product_name}'")
 
-        # --- GLOBAL RESOLVER STEP (FIXED ATTRIBUTE ERROR) ---
+        # --- GLOBAL RESOLVER STEP ---
         resolved_name = product_name
         if product_name:
             resolved_name = search_product(product_name) or product_name
@@ -66,10 +66,39 @@ class DecisionAgent:
         # --- INTENT: ORDER ---
         if intent == "order":
             qty = quantity or 1
+            
+            # A. Fetch Product Data to check Prescription Status
+            product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
+            
+            if not product_data:
+                 return {"message": f"I'm sorry, I couldn't find '{resolved_name}' in our inventory."}
+
+            # B. PRESCRIPTION GATEKEEPER LOGIC
+            if product_data.get("prescription_required", False):
+                print(f"🔒 [GATEKEEPER]: {resolved_name} requires prescription.")
+                
+                # Check if image is provided in this request
+                if not image_data:
+                    return {
+                        "message": f"⚠️ **Prescription Required**\n\n**{resolved_name}** is a restricted medicine. Please click the **paperclip icon 📎** to upload a photo of your doctor's prescription so I can verify it."
+                    }
+                
+                # Verify Image with Vision AI
+                verification = await self.safety_agent.verify_prescription(image_data, resolved_name)
+                
+                if not verification.get("approved"):
+                    return {
+                        "message": f"❌ **Verification Failed**\n\nI couldn't approve this order. Reason: {verification.get('reason')}. Please upload a clear image of a valid prescription."
+                    }
+                
+                print(f"✅ [GATEKEEPER]: Prescription Verified for {resolved_name}.")
+
+            # C. Standard Safety Checks (Quantity)
             safety = self.safety_agent.validate_order(patient_id=session_id, product_name=resolved_name, quantity=qty)
             if not safety["approved"]:
                 return {"message": f"❌ **Safety Block**: {safety['reason']}"}
             
+            # D. Execute Order
             res = await self.execution_agent.execute_order(patient_id=session_id, product_name=resolved_name, quantity=qty)
             if res.get("approved"):
                 order_id = res['order']['order_id']
@@ -94,7 +123,8 @@ class DecisionAgent:
             recommended = search_by_symptom(symptom)
             if recommended and recommended != "None":
                 product = self.execution_agent.product_service.get_product_by_name(recommended)
-                return {"message": f"👨‍⚕️ **Recommendation**\n\nFor '{symptom}', I suggest **{recommended}**. It costs **${product['price']}**. Shall I explain how it works?"}
+                price = product['price'] if product else "N/A"
+                return {"message": f"👨‍⚕️ **Recommendation**\n\nFor '{symptom}', I suggest **{recommended}**. It costs **${price}**. Shall I explain how it works?"}
             return {"message": f"I couldn't find a matching medicine for '{symptom}'. Please consult our pharmacist."}
 
         # --- INTENT: DOSAGE INSTRUCTION ---

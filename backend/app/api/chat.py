@@ -12,6 +12,7 @@ decision_agent = DecisionAgent()
 class ChatRequest(BaseModel):
     message: str
     session_id: str
+    image: str | None = None  # Accepts Base64 string for Vision AI
 
 @router.post("")
 @observe(name="chat_endpoint")
@@ -39,15 +40,22 @@ USER: {request.message}
 """
 
     # 3. Process through Context-Aware NLP Agent
+    # We pass the text message to the NLP agent to determine Intent
     parsed_response = parse_user_message(enriched_message)
 
     # 4. Save User input and LLM's interpretation into turn history
+    # Note: We don't save the massive base64 image string to memory to save tokens
     memory.save_context(
         {"input": request.message}, 
         {"output": parsed_response}
     )
 
     # 5. Route to Decision Agent for Action
-    result = await decision_agent.decide(parsed_response, session_id=request.session_id) 
+    # PASS THE IMAGE DATA HERE
+    result = await decision_agent.decide(
+        parsed_response, 
+        session_id=request.session_id, 
+        image_data=request.image
+    ) 
 
     return result
