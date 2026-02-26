@@ -25,12 +25,33 @@ def index_products(products):
 
 @observe(name="search_product")
 def search_product(name: str):
+    """
+    Searches for a product but includes a distance check to prevent hallucinations.
+    """
     try:
+        if collection.count() == 0:
+             return None # Failsafe if the vector DB is empty
+             
         emb = model.encode(name).tolist()
-        results = collection.query(query_embeddings=[emb], n_results=1)
+        
+        results = collection.query(
+            query_embeddings=[emb], 
+            n_results=1,
+            include=['metadatas', 'distances'] # Crucial change
+        )
+        
         if results and results.get("documents") and len(results["documents"][0]) > 0:
-            # Return the metadata name if available
-            return results["metadatas"][0][0]["name"]
+            distance = results["distances"][0][0]
+            
+            # --- FIX: INCREASED THRESHOLD TO ALLOW FOR TYPOS ---
+            # A slightly higher threshold is more forgiving of spelling mistakes.
+            if distance < 1.2:
+                print(f"✅ Vector Match Found (Distance: {distance}). Correcting name.")
+                return results["metadatas"][0][0]["name"]
+            else:
+                print(f"⚠️ Vector Match too weak (Distance: {distance}). Rejecting to prevent hallucination.")
+                return None
+                
     except Exception as e:
         print(f"Vector search error: {e}")
     return None

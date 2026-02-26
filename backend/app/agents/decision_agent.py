@@ -55,13 +55,18 @@ class DecisionAgent:
         quantity = parsed_input.get("quantity")
         friendly_msg = parsed_input.get("friendly_response", "")
 
+        # --- FIX: BREAK THE PRESCRIPTION MEMORY LOCK ---
+        # If user asks for a new product, forget the old prescription check.
+        if product_name and pending_verification_product and product_name.lower() != pending_verification_product.lower():
+            print(f"🔄 [STATE]: User changed mind. Clearing pending state for '{pending_verification_product}'")
+            memory.clear_state("pending_verification")
+            pending_verification_product = None # Update local variable
+
         # --- STATE RECOVERY LOGIC ---
-        # If we have an image and a pending product, force the intent to verification
         if image_data and pending_verification_product:
             print(f"🔄 [STATE]: Resuming verification for {pending_verification_product}")
             product_name = pending_verification_product
-            intent = "order" # Treat as order continuance
-            # Clear state after retrieval (will be re-set if verification fails)
+            intent = "order" 
             memory.clear_state("pending_verification")
         
         # LOG FOR TERMINAL TRACKING
@@ -73,51 +78,40 @@ class DecisionAgent:
             resolved_name = search_product(product_name) or product_name
             print(f"🔍 [GLOBAL RESOLVER]: '{product_name}' resolved to '{resolved_name}'")
 
-        if not resolved_name and intent != "reorder_last" and intent != "symptom_recommendation":
-            return {"message": friendly_msg or "I'm ready. Which medicine are we discussing today?"}
+        # If we failed to find a product, but the intent needs one, fail gracefully.
+        if not resolved_name and intent in ["order", "product_info", "product_description", "dosage_instruction"]:
+            return {"message": f"I'm sorry, I couldn't find '{product_name}' in our inventory. Please check the spelling or ask for something else."}
 
         # --- INTENT: ORDER ---
         if intent == "order":
             qty = quantity or 1
-            
-            # A. Fetch Product Data
             product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
             
             if not product_data:
                  return {"message": f"I'm sorry, I couldn't find '{resolved_name}' in our inventory."}
 
-            # B. PRESCRIPTION GATEKEEPER LOGIC
             if product_data.get("prescription_required", False):
                 print(f"🔒 [GATEKEEPER]: {resolved_name} requires prescription.")
-                
-                # Check if image is provided in this request
                 if not image_data:
-                    # SAVE STATE: Remember what we are waiting for
                     memory.set_state("pending_verification", resolved_name)
-                    
                     return {
                         "message": f"⚠️ **Prescription Required**\n\n**{resolved_name}** is a restricted medicine. Please click the **paperclip icon 📎** to upload a photo of your doctor's prescription so I can verify it."
                     }
                 
-                # Verify Image with Vision AI
                 verification = await self.safety_agent.verify_prescription(image_data, resolved_name)
                 
                 if not verification.get("approved"):
-                    # If failed, keep state so they can try again
                     memory.set_state("pending_verification", resolved_name)
                     return {
                         "message": f"❌ **Verification Failed**\n\nI couldn't approve this order. Reason: {verification.get('reason')}. Please upload a clear image of a valid prescription."
                     }
                 
                 print(f"✅ [GATEKEEPER]: Prescription Verified for {resolved_name}.")
-                # Success - State is already cleared or irrelevant now
 
-            # C. Standard Safety Checks (Quantity)
             safety = self.safety_agent.validate_order(patient_id=session_id, product_name=resolved_name, quantity=qty)
             if not safety["approved"]:
                 return {"message": f"❌ **Safety Block**: {safety['reason']}"}
             
-            # D. Execute Order
             res = await self.execution_agent.execute_order(patient_id=session_id, product_name=resolved_name, quantity=qty)
             if res.get("approved"):
                 order_id = res['order']['order_id']
