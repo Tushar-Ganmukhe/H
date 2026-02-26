@@ -1,24 +1,67 @@
 import os
 import json
+import google.generativeai as genai
 from langfuse import observe
-from langchain_groq import ChatGroq
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 class SafetyAgent:
 
     def __init__(self):
-        # Vision Model for Prescription Verification
-        self.vision_llm = ChatGroq(
-            groq_api_key=os.getenv("GROQ_API_KEY"),
-            model="llama-3.2-11b-vision-preview",
-            temperature=0
+        self.google_api_key = os.getenv("GOOGLE_API_KEY")
+        
+        # 1. Dynamically find the best available Gemini Vision model
+        self.vision_model_name = self._get_available_vision_model()
+        print(f"✅ [SAFETY AGENT]: Initialized with dynamic vision model: {self.vision_model_name}")
+
+        # 2. Initialize LangChain with the dynamically found model
+        self.vision_llm = ChatGoogleGenerativeAI(
+            model=self.vision_model_name,
+            temperature=0,
+            google_api_key=self.google_api_key
         )
+
+    def _get_available_vision_model(self) -> str:
+        """
+        Scans Google AI Studio for available models and selects the best one 
+        to prevent 'Model Not Found' errors.
+        """
+        try:
+            genai.configure(api_key=self.google_api_key)
+            # Fetch all models that support content generation
+            available_models =[
+                m.name for m in genai.list_models() 
+                if 'generateContent' in m.supported_generation_methods
+            ]
+            
+            # List of preferred vision-capable models (from newest/fastest to oldest)
+            preferences =[
+                'models/gemini-2.5-flash',
+                'models/gemini-2.0-flash', 
+                'models/gemini-1.5-flash', 
+                'models/gemini-1.5-pro'
+            ]
+            
+            # Check preferences against available models
+            for pref in preferences:
+                if pref in available_models:
+                    return pref
+                    
+            # Fallback: Just return the first available gemini model
+            for model in available_models:
+                if 'gemini' in model:
+                    return model
+                    
+        except Exception as e:
+            print(f"⚠️ Dynamic model fetch failed: {e}. Defaulting to gemini-1.5-flash")
+            
+        # Absolute fallback if API listing fails
+        return "gemini-1.5-flash"
 
     @observe(name="verify_prescription_image")
     async def verify_prescription(self, image_b64: str, product_name: str):
         """
-        Uses Llama-3.2 Vision to verify if the uploaded image is a valid prescription
-        and if it matches the requested medicine.
+        Uses dynamically selected Google Gemini Vision to verify if the uploaded image looks like a valid prescription.
         """
         if not image_b64:
             return {"approved": False, "reason": "No image data received."}
@@ -30,11 +73,16 @@ class SafetyAgent:
         else:
             image_url = f"data:image/jpeg;base64,{image_b64}"
 
+        # Prompt for image verification
         prompt = f"""
-        You are a strict Pharmacist Regulatory Bot.
+        You are a Pharmacy Assistant verifying documents.
         Analyze this image. 
-        1. Is it a valid medical prescription (doctor's note, hospital discharge, or script)? 
-        2. Does it mention the medicine '{product_name}' (or a similar generic name)?
+        Does it look like a medical prescription, doctor's note, clinic receipt, or medical document?
+        (Look for handwriting, medical symbols, RX signs, clinic letterheads, or lists of medicines).
+        
+        You DO NOT need to strictly verify if the exact text '{product_name}' is written. 
+        As long as it appears to be a genuine medical document/prescription, approve it.
+        If it is obviously a picture of a cat, a car, a random selfie, or blank paper, reject it.
         
         Return ONLY valid JSON:
         {{
@@ -55,13 +103,20 @@ class SafetyAgent:
 
         try:
             response = await self.vision_llm.ainvoke([msg])
-            content = response.content.replace("```json", "").replace("```", "").strip()
+            
+            # Aggressively clean the response to ensure it parses as JSON
+            content = response.content.strip()
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+                
             return json.loads(content)
         except Exception as e:
             print(f"Vision AI Error: {e}")
             return {
                 "approved": False, 
-                "reason": "I could not analyze the image clearly. Please upload a clearer photo."
+                "reason": "I could not analyze the image clearly. Please try uploading a clearer photo."
             }
 
     @observe(name="validate_order_safety")
@@ -73,8 +128,6 @@ class SafetyAgent:
                 "approved": False,
                 "reason": "Invalid quantity"
             }
-        
-        # In a real app, you might check drug interactions here too
         
         return {
             "approved": True,

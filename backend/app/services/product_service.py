@@ -37,6 +37,10 @@ class ProductService:
             "description": product.description,
             "dosage_frequency": product.search_name # Mapped from Column H
         }
+    
+    @observe(name="get_all_products")
+    def get_all_products(self):
+        return self.db.query(Product).all()
 
     @observe(name="update_manual_inventory")
     def update_product(self, product_id: str, updates: dict):
@@ -46,9 +50,21 @@ class ProductService:
             if "price" in updates: product.price = float(updates["price"])
             if "prescription_required" in updates: 
                 product.prescription_required = bool(updates["prescription_required"])
+            if "description" in updates:
+                product.description = updates["description"]
+            
             product.last_updated = datetime.utcnow()
             self.db.commit()
             self.db.refresh(product)
+            
+            # --- REAL-TIME VECTOR SYNC ---
+            print(f"🔄 Syncing Vector DB for {product.name}...")
+            index_products([{
+                "product_id": product.product_id, 
+                "product_name": product.name, 
+                "description": product.description
+            }])
+            
             return product
         return None
 
@@ -69,6 +85,8 @@ class ProductService:
                 p_desc = str(row[5]) if pd.notnull(row[5]) else "" 
                 p_stock = int(float(row[6])) if pd.notnull(row[6]) else 0
                 p_dosage = str(row[7]) if pd.notnull(row[7]) else "As directed"
+                # Default prescription check (optional logic)
+                p_script = False 
 
                 existing = self.db.query(Product).filter(Product.product_id == p_id).first()
                 if existing:
@@ -78,15 +96,33 @@ class ProductService:
                     existing.search_name = p_dosage
                     summary["updated"] += 1
                 else:
-                    new_p = Product(product_id=p_id, name=p_name, price=p_price, stock=p_stock, description=p_desc, search_name=p_dosage)
+                    new_p = Product(
+                        product_id=p_id, 
+                        name=p_name, 
+                        price=p_price, 
+                        stock=p_stock, 
+                        description=p_desc, 
+                        search_name=p_dosage,
+                        prescription_required=p_script
+                    )
                     self.db.add(new_p)
                     summary["added"] += 1
-                self.db.commit()
+                
+                # Prepare for Vector Sync
                 vector_updates.append({"product_id": p_id, "product_name": p_name, "description": p_desc})
+            
             except Exception as e:
-                self.db.rollback()
                 print(f"❌ Row {index} fail: {e}")
                 summary["failed"] += 1
         
-        if vector_updates: index_products(vector_updates)
+        # Commit SQL changes
+        try:
+            self.db.commit()
+            # Sync Vector DB
+            if vector_updates: 
+                index_products(vector_updates)
+        except Exception as e:
+            self.db.rollback()
+            raise e
+        
         return summary
