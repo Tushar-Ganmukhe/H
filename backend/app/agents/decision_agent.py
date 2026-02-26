@@ -2,7 +2,7 @@ import json
 import os
 from langfuse import observe
 from langchain_groq import ChatGroq
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage # NEW: Import SystemMessage for LLM fallback
 from app.agents.safety_agent import SafetyAgent
 from app.agents.execution_agent import ExecutionAgent
 from app.services.vector_store import search_by_symptom, search_product
@@ -35,6 +35,36 @@ class DecisionAgent:
             return response.content
         except:
             return f"Usage: {frequency}. (Instruction translation unavailable)."
+
+    # --- NEW: LLM-Powered "Did You Mean?" Logic ---
+    @observe(name="did_you_mean_suggestion")
+    async def _get_did_you_mean_suggestion(self, user_query: str):
+        all_product_names = self.execution_agent.product_service.get_all_product_names()
+        if not all_product_names:
+            return None # No products to compare against
+
+        prompt = f"""
+        The user asked for a medicine named: "{user_query}".
+        I could not find an exact match in our inventory.
+        
+        Here is a list of all available medicines:
+        {", ".join(all_product_names)}
+        
+        Based on the user's query and the list above, what is the SINGLE MOST LIKELY medicine the user intended to ask for?
+        Respond ONLY with the exact name from the list, or "None" if no close match.
+        """
+        try:
+            response = await self.translator_llm.ainvoke([
+                SystemMessage(content="You are an expert at correcting medicine names from a given list."),
+                HumanMessage(content=prompt)
+            ])
+            suggested_name = response.content.strip()
+            if suggested_name.lower() != "none" and suggested_name in all_product_names: # Validate against actual list
+                return suggested_name
+            return None
+        except Exception as e:
+            print(f"⚠️ Did You Mean LLM Error: {e}")
+            return None
 
     @observe(name="decide_on_user_intent")
     async def decide(self, parsed_input, session_id: str, image_data: str = None):
@@ -75,12 +105,31 @@ class DecisionAgent:
         # --- GLOBAL RESOLVER STEP ---
         resolved_name = product_name
         if product_name:
-            resolved_name = search_product(product_name) or product_name
+            resolved_name = search_product(product_name) # First try Vector Search
             print(f"🔍 [GLOBAL RESOLVER]: '{product_name}' resolved to '{resolved_name}'")
 
-        # If we failed to find a product, but the intent needs one, fail gracefully.
-        if not resolved_name and intent in ["order", "product_info", "product_description", "dosage_instruction"]:
-            return {"message": f"I'm sorry, I couldn't find '{product_name}' in our inventory. Please check the spelling or ask for something else."}
+        # --- NEW: "Did You Mean?" Fallback ---
+        # If vector search failed, but user clearly asked for something, try LLM correction.
+        if not resolved_name and product_name and intent not in ["reorder_last", "symptom_recommendation", "unknown"]:
+            print(f"🤔 [DID YOU MEAN?]: Vector search failed for '{product_name}'. Trying LLM correction...")
+            llm_suggestion = await self._get_did_you_mean_suggestion(product_name)
+            if llm_suggestion:
+                # If LLM suggests a valid product, update resolved_name for this turn.
+                resolved_name = llm_suggestion
+                print(f"💡 [DID YOU MEAN?]: LLM suggested '{resolved_name}'.")
+                # We can update the friendly response to guide the user.
+                friendly_msg = f"I couldn't find '{product_name}', but did you mean **{resolved_name}**? Let me check that for you."
+            else:
+                print(f"🚫 [DID YOU MEAN?]: LLM found no good suggestion for '{product_name}'.")
+
+        # If after all attempts, we still don't have a resolved name for a product-related intent.
+        if not resolved_name and product_name and intent in ["order", "product_info", "product_description", "dosage_instruction"]:
+             return {"message": f"I'm sorry, I couldn't find '{product_name}' in our inventory. Please check the spelling or ask for something else."}
+
+        # Handle cases where no product name was initially provided or required (e.g., reorder_last, symptom_recommendation)
+        if not resolved_name and intent not in ["reorder_last", "symptom_recommendation", "unknown"]:
+            return {"message": friendly_msg or "I'm ready. Which medicine are we discussing today?"}
+
 
         # --- INTENT: ORDER ---
         if intent == "order":

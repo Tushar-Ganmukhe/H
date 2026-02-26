@@ -42,6 +42,12 @@ class ProductService:
     def get_all_products(self):
         return self.db.query(Product).all()
 
+    # --- NEW: Helper method to get all product names for "Did You Mean?" ---
+    @observe(name="get_all_product_names")
+    def get_all_product_names(self):
+        """Returns a list of all product names for LLM comparison."""
+        return [p.name for p in self.db.query(Product.name).all()]
+
     @observe(name="update_manual_inventory")
     def update_product(self, product_id: str, updates: dict):
         product = self.db.query(Product).filter(Product.product_id == product_id).first()

@@ -45,7 +45,7 @@ def search_product(name: str):
             
             # --- FIX: INCREASED THRESHOLD TO ALLOW FOR TYPOS ---
             # A slightly higher threshold is more forgiving of spelling mistakes.
-            if distance < 1.2:
+            if distance < 1.4:
                 print(f"✅ Vector Match Found (Distance: {distance}). Correcting name.")
                 return results["metadatas"][0][0]["name"]
             else:
