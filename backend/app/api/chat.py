@@ -1,61 +1,34 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from langfuse import observe, get_client
-
+from typing import Optional
 from app.agents.conversational_agent import parse_user_message
 from app.agents.decision_agent import DecisionAgent
-from app.agents.memory import get_memory
+from app.agents.memory import memory_store
 
-router = APIRouter(prefix="/chat", tags=["Agent Chat"])
+router = APIRouter(prefix="/chat", tags=["Tier 3 Agentic Chat"])
 decision_agent = DecisionAgent()
 
 class ChatRequest(BaseModel):
     message: str
     session_id: str
-    image: str | None = None  # Accepts Base64 string for Vision AI
+    image: Optional[str] = None # Base64 Image from React
+    user_lang: Optional[str] = "en"
 
 @router.post("")
-@observe(name="chat_endpoint")
-async def chat(request: ChatRequest):
-    # Sync Trace with Session ID (Mobile Number)
-    client = get_client()
-    client.update_current_trace(
-        session_id=request.session_id,
-        user_id=f"user_{request.session_id}" 
+async def chat_endpoint(request: ChatRequest):
+    # 1. Get current state
+    current_state = memory_store.get_state(request.session_id)
+    state_json = current_state.json()
+
+    # 2. Update Slots
+    nlp_res = parse_user_message(request.message, state_json)
+
+    # 3. Decision with Vision Analysis
+    final_res = await decision_agent.decide(
+        nlp_res, 
+        request.session_id, 
+        user_lang=request.user_lang,
+        image_data=request.image # <--- PASS IMAGE DATA
     )
 
-    # 1. Load context from session-based memory
-    memory = get_memory(request.session_id)
-    # Fetch last 10 turns for deep context
-    history_vars = memory.load_memory_variables({})
-    history = history_vars.get("history", "")
-
-    # 2. Build Enriched turn-labeled prompt
-    enriched_message = f"""
---- CONVERSATION HISTORY ---
-{history}
-
---- CURRENT USER QUERY ---
-USER: {request.message}
-"""
-
-    # 3. Process through Context-Aware NLP Agent
-    # We pass the text message to the NLP agent to determine Intent
-    parsed_response = parse_user_message(enriched_message)
-
-    # 4. Save User input and LLM's interpretation into turn history
-    # Note: We don't save the massive base64 image string to memory to save tokens
-    memory.save_context(
-        {"input": request.message}, 
-        {"output": parsed_response}
-    )
-
-    # 5. Route to Decision Agent for Action
-    # PASS THE IMAGE DATA HERE
-    result = await decision_agent.decide(
-        parsed_response, 
-        session_id=request.session_id, 
-        image_data=request.image
-    ) 
-
-    return result
+    return final_res

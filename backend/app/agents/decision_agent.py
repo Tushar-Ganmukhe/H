@@ -1,215 +1,139 @@
 import json
 import os
-from langfuse import observe
-from langchain_groq import ChatGroq
-from langchain_core.messages import HumanMessage, SystemMessage # NEW: Import SystemMessage for LLM fallback
-from app.agents.safety_agent import SafetyAgent
+from dotenv import load_dotenv
+from app.agents.memory import memory_store
 from app.agents.execution_agent import ExecutionAgent
-from app.services.vector_store import search_by_symptom, search_product
-from app.agents.memory import get_memory
+from app.agents.safety_agent import SafetyAgent
+from app.services.vector_store import search_product
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage, SystemMessage
+from langfuse import observe
+
+load_dotenv()
 
 class DecisionAgent:
-
     def __init__(self):
-        self.safety_agent = SafetyAgent()
-        self.execution_agent = ExecutionAgent()
-        # Internal LLM instance for translation and clarification tasks
-        self.translator_llm = ChatGroq(
-            groq_api_key=os.getenv("GROQ_API_KEY"),
-            model="llama-3.1-8b-instant",
+        self.executor = ExecutionAgent()
+        self.safety = SafetyAgent()
+        self.llm = ChatGroq(
+            groq_api_key=os.getenv("GROQ_API_KEY"), 
+            model="llama-3.1-8b-instant", 
             temperature=0
         )
 
-    async def _translate_task(self, text, frequency="As directed", task_type="general"):
-        """Agentic task: German-to-English Pharmacist Translator."""
-        if not text or text.lower() == "nan" or text == "":
-            return f"Medical records indicate usage: {frequency}. Please follow the instructions on the packaging."
-        
-        if task_type == "dosage":
-            prompt = f"Expert Pharmacist: Convert this dosage '{frequency}' and clinical text '{text}' into clear English steps for a patient."
-        else:
-            prompt = f"Translate this German medical description into friendly English: {text}"
-        
-        try:
-            response = await self.translator_llm.ainvoke([HumanMessage(content=prompt)])
-            return response.content
-        except:
-            return f"Usage: {frequency}. (Instruction translation unavailable)."
-
-    # --- NEW: LLM-Powered "Did You Mean?" Logic ---
-    @observe(name="did_you_mean_suggestion")
-    async def _get_did_you_mean_suggestion(self, user_query: str):
-        all_product_names = self.execution_agent.product_service.get_all_product_names()
-        if not all_product_names:
-            return None # No products to compare against
-
+    async def _reason_with_german_context(self, user_query, product_data, target_lang="en"):
         prompt = f"""
-        The user asked for a medicine named: "{user_query}".
-        I could not find an exact match in our inventory.
-        
-        Here is a list of all available medicines:
-        {", ".join(all_product_names)}
-        
-        Based on the user's query and the list above, what is the SINGLE MOST LIKELY medicine the user intended to ask for?
-        Respond ONLY with the exact name from the list, or "None" if no close match.
+        User Query: {user_query}
+        Medicine Data: {product_data['product_name']} | Description: {product_data['description']}
+        Explain in {target_lang} if this matches. Return JSON: {{"match": bool, "explanation": "str"}}
         """
         try:
-            response = await self.translator_llm.ainvoke([
-                SystemMessage(content="You are an expert at correcting medicine names from a given list."),
-                HumanMessage(content=prompt)
-            ])
-            suggested_name = response.content.strip()
-            if suggested_name.lower() != "none" and suggested_name in all_product_names: # Validate against actual list
-                return suggested_name
-            return None
-        except Exception as e:
-            print(f"⚠️ Did You Mean LLM Error: {e}")
-            return None
+            res = await self.llm.ainvoke([SystemMessage(content="You are a pharmacist."), HumanMessage(content=prompt)])
+            content = res.content.strip().replace("```json", "").replace("```", "")
+            return json.loads(content)
+        except:
+             return {"match": True, "explanation": f"I found {product_data['product_name']}."}
 
-    @observe(name="decide_on_user_intent")
-    async def decide(self, parsed_input, session_id: str, image_data: str = None):
-        # 1. Access Memory State
-        memory = get_memory(session_id)
-        pending_verification_product = memory.get_state("pending_verification")
-
-        # 2. Clean JSON parsing if necessary
-        if isinstance(parsed_input, str):
-            try:
-                clean_input = parsed_input.replace("```json", "").replace("```", "").strip()
-                parsed_input = json.loads(clean_input)
-            except Exception:
-                return {"message": "Could you please clarify the medicine name or symptom?"}
-
-        intent = parsed_input.get("intent")
-        product_name = parsed_input.get("product_name")
-        quantity = parsed_input.get("quantity")
-        friendly_msg = parsed_input.get("friendly_response", "")
-
-        # --- FIX: BREAK THE PRESCRIPTION MEMORY LOCK ---
-        # If user asks for a new product, forget the old prescription check.
-        if product_name and pending_verification_product and product_name.lower() != pending_verification_product.lower():
-            print(f"🔄 [STATE]: User changed mind. Clearing pending state for '{pending_verification_product}'")
-            memory.clear_state("pending_verification")
-            pending_verification_product = None # Update local variable
-
-        # --- STATE RECOVERY LOGIC ---
-        if image_data and pending_verification_product:
-            print(f"🔄 [STATE]: Resuming verification for {pending_verification_product}")
-            product_name = pending_verification_product
-            intent = "order" 
-            memory.clear_state("pending_verification")
+    @observe(name="tier3_decision_with_vision")
+    async def decide(self, nlp_output: dict, session_id: str, user_lang="en", image_data: str = None):
+        mem = memory_store.get_state(session_id)
+        intent = nlp_output.get("intent")
+        slots = nlp_output.get("updated_slots", {})
         
-        # LOG FOR TERMINAL TRACKING
-        print(f"⚡ [INTENT ROUTING]: Processing '{intent}' | Product: '{product_name}'")
+        # ---------------------------------------------------------
+        # 1. INTELLIGENT SLOT RESOLUTION (THE FIX)
+        # ---------------------------------------------------------
+        if slots.get("product_name"):
+            resolved_name = search_product(slots["product_name"])
+            
+            # CRITICAL FIX: Only reset safety if the product implies a CONTEXT SWITCH
+            # If LLM repeats the SAME product name during "Confirm", do NOT reset.
+            if resolved_name != mem.current_slots["product_name"]:
+                mem.prescription_verified = False 
+                mem.transaction_state = "IDLE" 
+            
+            # Update the slot to the resolved name
+            mem.current_slots["product_name"] = resolved_name
+            memory_store.update_entity_stack(session_id, resolved_name)
 
-        # --- GLOBAL RESOLVER STEP ---
-        resolved_name = product_name
-        if product_name:
-            resolved_name = search_product(product_name) # First try Vector Search
-            print(f"🔍 [GLOBAL RESOLVER]: '{product_name}' resolved to '{resolved_name}'")
+        if slots.get("quantity"):
+            mem.current_slots["quantity"] = slots["quantity"]
 
-        # --- NEW: "Did You Mean?" Fallback ---
-        # If vector search failed, but user clearly asked for something, try LLM correction.
-        if not resolved_name and product_name and intent not in ["reorder_last", "symptom_recommendation", "unknown"]:
-            print(f"🤔 [DID YOU MEAN?]: Vector search failed for '{product_name}'. Trying LLM correction...")
-            llm_suggestion = await self._get_did_you_mean_suggestion(product_name)
-            if llm_suggestion:
-                # If LLM suggests a valid product, update resolved_name for this turn.
-                resolved_name = llm_suggestion
-                print(f"💡 [DID YOU MEAN?]: LLM suggested '{resolved_name}'.")
-                # We can update the friendly response to guide the user.
-                friendly_msg = f"I couldn't find '{product_name}', but did you mean **{resolved_name}**? Let me check that for you."
+        # Handle Explicit Cancel
+        if intent == "CANCEL":
+            memory_store.clear_slots(session_id)
+            return {"message": "Okay, I've cancelled that. How else can I help?"}
+
+        # ---------------------------------------------------------
+        # 2. VISION SAFETY CHECK 
+        # ---------------------------------------------------------
+        if mem.transaction_state == "AWAITING_PRESCRIPTION":
+            # If user sent an image, process it
+            if image_data:
+                verification = await self.safety.verify_prescription(image_data, mem.current_slots["product_name"])
+                
+                if verification["approved"]:
+                    mem.prescription_verified = True
+                    mem.transaction_state = "PENDING_CONFIRMATION"
+                    return {"message": f"✅ Prescription verified! {verification['reason']}\n\nProceed with order for {mem.current_slots['quantity']}x {mem.current_slots['product_name']}?"}
+                else:
+                    return {"message": f"❌ Prescription Rejected: {verification['reason']}\n\nPlease upload a valid medical document."}
+            
+            # If NO image and NO new product mentioned, stay stuck
+            return {"message": f"⚠️ **{mem.current_slots['product_name']}** requires a prescription. Please upload a photo before we proceed, or ask for a different medicine."}
+
+        # ---------------------------------------------------------
+        # 3. ORDER LOGIC (Rx Gatekeeper)
+        # ---------------------------------------------------------
+        if intent in ["ORDER", "CONFIRM"] and mem.current_slots["product_name"]:
+            # Fetch Product Data
+            prod_data = self.executor.products.get_product_by_name(mem.current_slots["product_name"])
+            
+            if not prod_data:
+                return {"message": "I couldn't find that medicine in our database."}
+
+            # CHECK: Rx Requirement from Admin Portal Data
+            # Only trigger if NOT already verified
+            if prod_data.get("prescription_required") and not mem.prescription_verified:
+                mem.transaction_state = "AWAITING_PRESCRIPTION"
+                return {"message": f"⚠️ **{prod_data['product_name']}** requires a valid prescription. Please click the paperclip icon 📎 to upload a photo."}
+
+            # Prepare Quote
+            quote = self.executor.prepare_order(mem.current_slots["product_name"], mem.current_slots["quantity"])
+            
+            if quote["success"]:
+                # If "CONFIRM" was said (State is PENDING or Intent is CONFIRM)
+                if intent == "CONFIRM" or mem.transaction_state == "PENDING_CONFIRMATION":
+                    await self.executor.commit_order(session_id, quote["product_id"], mem.current_slots["quantity"], quote["total"])
+                    memory_store.clear_slots(session_id)
+                    
+                    success_msg = "✅ Order placed successfully! Your prescription has been archived."
+                    if user_lang == "hi": success_msg = "✅ ऑर्डर सफलतापूर्वक दिया गया!"
+                    return {"message": success_msg}
+                
+                # Otherwise, show quote and wait for specific confirmation
+                mem.transaction_state = "PENDING_CONFIRMATION"
+                return {"message": quote["msg"]}
             else:
-                print(f"🚫 [DID YOU MEAN?]: LLM found no good suggestion for '{product_name}'.")
+                return {"message": f"❌ {quote.get('error')}"}
 
-        # If after all attempts, we still don't have a resolved name for a product-related intent.
-        if not resolved_name and product_name and intent in ["order", "product_info", "product_description", "dosage_instruction"]:
-             return {"message": f"I'm sorry, I couldn't find '{product_name}' in our inventory. Please check the spelling or ask for something else."}
-
-        # Handle cases where no product name was initially provided or required (e.g., reorder_last, symptom_recommendation)
-        if not resolved_name and intent not in ["reorder_last", "symptom_recommendation", "unknown"]:
-            return {"message": friendly_msg or "I'm ready. Which medicine are we discussing today?"}
-
-
-        # --- INTENT: ORDER ---
-        if intent == "order":
-            qty = quantity or 1
-            product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
+        # 4. Standard Symptoms / Info
+        if intent == "SYMPTOM":
+            suggested = nlp_output.get("new_entity") or nlp_output.get("response_text")
+            potential_match = search_product(suggested)
             
-            if not product_data:
-                 return {"message": f"I'm sorry, I couldn't find '{resolved_name}' in our inventory."}
-
-            if product_data.get("prescription_required", False):
-                print(f"🔒 [GATEKEEPER]: {resolved_name} requires prescription.")
-                if not image_data:
-                    memory.set_state("pending_verification", resolved_name)
-                    return {
-                        "message": f"⚠️ **Prescription Required**\n\n**{resolved_name}** is a restricted medicine. Please click the **paperclip icon 📎** to upload a photo of your doctor's prescription so I can verify it."
-                    }
+            if potential_match:
+                prod_data = self.executor.products.get_product_by_name(potential_match)
+                reasoning = await self._reason_with_german_context(nlp_output.get("response_text"), prod_data, user_lang)
                 
-                verification = await self.safety_agent.verify_prescription(image_data, resolved_name)
+                # Context Switch implicit here too:
+                if potential_match != mem.current_slots["product_name"]:
+                    mem.prescription_verified = False # Reset if different
+                    mem.transaction_state = "IDLE"
+
+                mem.current_slots["product_name"] = potential_match
+                mem.transaction_state = "RECOMMENDING"
                 
-                if not verification.get("approved"):
-                    memory.set_state("pending_verification", resolved_name)
-                    return {
-                        "message": f"❌ **Verification Failed**\n\nI couldn't approve this order. Reason: {verification.get('reason')}. Please upload a clear image of a valid prescription."
-                    }
-                
-                print(f"✅ [GATEKEEPER]: Prescription Verified for {resolved_name}.")
+                return {"message": f"👨‍⚕️ {reasoning['explanation']}\n\nWould you like to order it?"}
 
-            safety = self.safety_agent.validate_order(patient_id=session_id, product_name=resolved_name, quantity=qty)
-            if not safety["approved"]:
-                return {"message": f"❌ **Safety Block**: {safety['reason']}"}
-            
-            res = await self.execution_agent.execute_order(patient_id=session_id, product_name=resolved_name, quantity=qty)
-            if res.get("approved"):
-                order_id = res['order']['order_id']
-                total = res['order']['total_price']
-                return {
-                    "message": f"✅ **Order Confirmed**\n\nSuccessfully placed your order for **{qty}x {resolved_name}**.\n\n**Total:** ${total}\n**Order ID:** `{order_id}`"
-                }
-            return {"message": f"❌ **Fulfillment Error**: {res.get('error')}"}
-
-        # --- INTENT: REORDER LAST ---
-        if intent == "reorder_last":
-            last_order = self.execution_agent.order_service.get_last_order(session_id)
-            if last_order:
-                return {
-                    "message": f"🔄 **Fast Reorder**\n\nI found your last order: **{last_order.product_name}** (Qty: {last_order.quantity}). Would you like me to place the same order for you now? reply with order it "
-                }
-            return {"message": "No previous orders found in your account history."}
-
-        # --- INTENT: SYMPTOM RECOMMENDATION ---
-        if intent == "symptom_recommendation":
-            symptom = parsed_input.get("symptom") or "your symptoms"
-            recommended = search_by_symptom(symptom)
-            if recommended and recommended != "None":
-                product = self.execution_agent.product_service.get_product_by_name(recommended)
-                price = product['price'] if product else "N/A"
-                return {"message": f"👨‍⚕️ **Recommendation**\n\nFor '{symptom}', I suggest **{recommended}**. It costs **${price}**. Shall I explain how it works?"}
-            return {"message": f"I couldn't find a matching medicine for '{symptom}'. Please consult our pharmacist."}
-
-        # --- INTENT: DOSAGE INSTRUCTION ---
-        if intent == "dosage_instruction":
-            product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
-            if product_data:
-                instruction = await self._translate_task(product_data.get("description", ""), product_data.get("dosage_frequency", "As directed"), "dosage")
-                return {"message": f"⏲️ **Dosage for {resolved_name}**\n\n{instruction}"}
-            return {"message": f"I couldn't retrieve dosage instructions for {resolved_name}."}
-
-        # --- INTENT: PRODUCT DESCRIPTION ---
-        if intent == "product_description":
-            product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
-            if product_data:
-                english_desc = await self._translate_task(product_data.get("description", ""))
-                return {"message": f"📖 **Medicine Details: {resolved_name}**\n\n{english_desc}"}
-            return {"message": f"I don't have a medical description for {resolved_name}."}
-
-        # --- INTENT: PRODUCT INFO ---
-        if intent == "product_info":
-            product_data = self.execution_agent.product_service.get_product_by_name(resolved_name)
-            if product_data:
-                return {"message": f"🔍 **Price Check**\n\n**{resolved_name}** is currently available at **${product_data['price']}** per unit."}
-            return {"message": f"I couldn't find **{resolved_name}** in our current inventory."}
-
-        return {"message": friendly_msg or "How else can I help you today?"}
+        return {"message": nlp_output.get("response_text", "How can I help you?")}
