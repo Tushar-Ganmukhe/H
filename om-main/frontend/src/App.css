@@ -1,0 +1,80 @@
+#root {
+  width: 100%;
+  height: 100%;
+  padding: 0; /* let individual components manage spacing */
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+/* login card enhancements */
+.login-card {
+  max-width: 400px;
+  margin: auto;
+}
+
+/* admin table scrolling */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  /* allow horizontal scrolling on smaller screens */
+}
+.admin-table th,
+.admin-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  background: #fff; /* ensure solid white cell backgrounds */
+  color: #000; /* black text for contrast */
+}
+.admin-table th {
+  /* stronger colored header for visibility */
+  background: #2c6f6f; /* dark teal */
+  color: #fff;
+  text-align: left;
+  font-weight: bold;
+}
+.admin-table tr {
+  background: #fff; /* default row background */
+}
+.admin-table tr:nth-child(even) {
+  background: #f1fcfc; /* subtle stripe */
+}
+.admin-table tr:hover {
+  background: #e0f7f7;
+}
+.admin-table td {
+  color: #333;
+}
+
+.read-the-docs {
+  color: #888;
+}

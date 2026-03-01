@@ -1,0 +1,332 @@
+{
+  "e45fd816-74f7-42b0-a087-9e5a2245d8d6": {
+    "id": "e45fd816-74f7-42b0-a087-9e5a2245d8d6",
+    "name": "PendingTester",
+    "phone": "000",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:00:40.223409"
+  },
+  "8dd382ee-827f-4455-947c-27e09f77ffa3": {
+    "id": "8dd382ee-827f-4455-947c-27e09f77ffa3",
+    "name": "PendingTester",
+    "phone": "555f4e60f",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:07:29.333035"
+  },
+  "1f218e05-9291-41c1-9b19-d85edd4fe714": {
+    "id": "1f218e05-9291-41c1-9b19-d85edd4fe714",
+    "name": "PendingTester",
+    "phone": "555c33a83",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:21:51.888586"
+  },
+  "cd293dca-86ab-4249-a628-bc2984b8ba28": {
+    "id": "cd293dca-86ab-4249-a628-bc2984b8ba28",
+    "name": "PendingTester",
+    "phone": "555e05979",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:33:57.388002"
+  },
+  "2097b349-bd6d-43b0-8800-a25e159ed06f": {
+    "id": "2097b349-bd6d-43b0-8800-a25e159ed06f",
+    "name": "PendingTester",
+    "phone": "555e00f4c",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:34:00.229877"
+  },
+  "73d23730-9d62-4894-8e30-bd87faa21ff5": {
+    "id": "73d23730-9d62-4894-8e30-bd87faa21ff5",
+    "name": "PendingTester",
+    "phone": "555da2350",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:34:02.157834"
+  },
+  "def27c1e-2ae7-45dc-9967-4011179bbd85": {
+    "id": "def27c1e-2ae7-45dc-9967-4011179bbd85",
+    "name": "PendingTester",
+    "phone": "55510ec84",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:35:30.429417"
+  },
+  "9c6a47d9-885f-4b2f-b334-f75c24ade454": {
+    "id": "9c6a47d9-885f-4b2f-b334-f75c24ade454",
+    "name": "PendingTester",
+    "phone": "555e3fc89",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:35:34.111839"
+  },
+  "b7c383c0-78b9-44a0-b131-4c7eff304f16": {
+    "id": "b7c383c0-78b9-44a0-b131-4c7eff304f16",
+    "name": "PendingTester",
+    "phone": "555bd495d",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:38:43.005473"
+  },
+  "1db00963-9637-4f29-a816-86587105af4d": {
+    "id": "1db00963-9637-4f29-a816-86587105af4d",
+    "name": "PendingTester",
+    "phone": "555b1ed97",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:38:45.202899"
+  },
+  "4b00fa54-b6a2-4996-a237-5d197fbf137a": {
+    "id": "4b00fa54-b6a2-4996-a237-5d197fbf137a",
+    "name": "PendingTester",
+    "phone": "555de74ac",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:38:47.606400"
+  },
+  "36f8741c-219e-4566-a47b-58b82aa72f84": {
+    "id": "36f8741c-219e-4566-a47b-58b82aa72f84",
+    "name": "PendingTester",
+    "phone": "5558f5945",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:48:26.604614"
+  },
+  "dacbf576-61e2-491a-b609-16c68d0fb889": {
+    "id": "dacbf576-61e2-491a-b609-16c68d0fb889",
+    "name": "PendingTester",
+    "phone": "5551fa714",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:49:39.220448"
+  },
+  "c1760cf8-9c4b-48e1-bcc3-741260fe239a": {
+    "id": "c1760cf8-9c4b-48e1-bcc3-741260fe239a",
+    "name": "PendingTester",
+    "phone": "55558fde7",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:49:41.140253"
+  },
+  "e8e2c6c5-bdc8-4534-bebd-431808f8fdc6": {
+    "id": "e8e2c6c5-bdc8-4534-bebd-431808f8fdc6",
+    "name": "PendingTester",
+    "phone": "5559fef37",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:49:43.580904"
+  },
+  "add3bc68-abe1-4804-a2e4-0b3ae2f1de45": {
+    "id": "add3bc68-abe1-4804-a2e4-0b3ae2f1de45",
+    "name": "PendingTester",
+    "phone": "5550b2567",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:50:42.716805"
+  },
+  "6fc39a10-31b5-4bd4-b129-f20602416228": {
+    "id": "6fc39a10-31b5-4bd4-b129-f20602416228",
+    "name": "PendingTester",
+    "phone": "555b34d9a",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:50:45.206711"
+  },
+  "43fa8712-a77e-44f8-8bd9-cc4cedfeba9a": {
+    "id": "43fa8712-a77e-44f8-8bd9-cc4cedfeba9a",
+    "name": "PendingTester",
+    "phone": "5558aa17b",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:50:47.511921"
+  },
+  "225220ab-3654-4a83-954a-c4637efccd65": {
+    "id": "225220ab-3654-4a83-954a-c4637efccd65",
+    "name": "PendingTester",
+    "phone": "55569d86b",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:51:53.226958"
+  },
+  "81603f0d-57d3-45ed-abb4-0e4d370b5b46": {
+    "id": "81603f0d-57d3-45ed-abb4-0e4d370b5b46",
+    "name": "PendingTester",
+    "phone": "5558dc309",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:51:55.659733"
+  },
+  "43f408eb-471a-40cb-bc32-b438707c0fb9": {
+    "id": "43f408eb-471a-40cb-bc32-b438707c0fb9",
+    "name": "PendingTester",
+    "phone": "555ea6547",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:51:57.442108"
+  },
+  "15e67e9f-3a63-4a46-a81d-1b26214d7a00": {
+    "id": "15e67e9f-3a63-4a46-a81d-1b26214d7a00",
+    "name": "PendingTester",
+    "phone": "555573a04",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:53:13.472015"
+  },
+  "c8254780-6333-41c3-b963-794b1ea4bd55": {
+    "id": "c8254780-6333-41c3-b963-794b1ea4bd55",
+    "name": "PendingTester",
+    "phone": "555469971",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:53:16.097756"
+  },
+  "20c83ec8-c808-4120-832c-9bab096cd258": {
+    "id": "20c83ec8-c808-4120-832c-9bab096cd258",
+    "name": "PendingTester",
+    "phone": "555c32956",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:54:15.322276"
+  },
+  "e718ac7c-689a-4ace-ac9c-e95eea70ea46": {
+    "id": "e718ac7c-689a-4ace-ac9c-e95eea70ea46",
+    "name": "PendingTester",
+    "phone": "5553cab04",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:54:17.495569"
+  },
+  "b750d1a5-84e1-4f8d-b101-2a1577d3712e": {
+    "id": "b750d1a5-84e1-4f8d-b101-2a1577d3712e",
+    "name": "PendingTester",
+    "phone": "5559a5776",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:54:19.511298"
+  },
+  "f8691431-efeb-4364-9289-184766e00dfa": {
+    "id": "f8691431-efeb-4364-9289-184766e00dfa",
+    "name": "PendingTester",
+    "phone": "555252dc5",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:55:18.484478"
+  },
+  "3dec06c0-dfc6-472f-8d63-1ef924f78128": {
+    "id": "3dec06c0-dfc6-472f-8d63-1ef924f78128",
+    "name": "PendingTester",
+    "phone": "55524da46",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:55:20.287134"
+  },
+  "7fa701b5-823b-4f53-add1-9cc926d006b1": {
+    "id": "7fa701b5-823b-4f53-add1-9cc926d006b1",
+    "name": "PendingTester",
+    "phone": "555d5e880",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T03:55:22.150760"
+  },
+  "9c425761-29f4-48cf-a932-71dc47295343": {
+    "id": "9c425761-29f4-48cf-a932-71dc47295343",
+    "name": "PendingTester",
+    "phone": "55535666b",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T04:03:10.495261"
+  },
+  "7d3b40eb-7383-4fc4-a9c6-328aa76e909f": {
+    "id": "7d3b40eb-7383-4fc4-a9c6-328aa76e909f",
+    "name": "PendingTester",
+    "phone": "5555f3149",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T04:04:14.158147"
+  },
+  "7e4556d3-fc8a-4fdd-b658-20c6f52acbfd": {
+    "id": "7e4556d3-fc8a-4fdd-b658-20c6f52acbfd",
+    "name": "PendingTester",
+    "phone": "5551e72ec",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T04:04:14.347786"
+  },
+  "7edf0c73-33dd-4eff-85fc-8767f5029b5f": {
+    "id": "7edf0c73-33dd-4eff-85fc-8767f5029b5f",
+    "name": "PendingTester",
+    "phone": "5551dd25a",
+    "shop_id": null,
+    "password": "pw",
+    "age": null,
+    "role": "user",
+    "created_at": "2026-03-01T04:04:16.025066"
+  }
+}

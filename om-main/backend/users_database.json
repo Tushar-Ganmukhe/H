@@ -1,0 +1,62 @@
+{
+  "7d24cd60-d65c-4ec9-87ac-6c2cb4b765b9": {
+    "id": "7d24cd60-d65c-4ec9-87ac-6c2cb4b765b9",
+    "name": "om nikam",
+    "phone": "876781137",
+    "shop_id": null,
+    "password": "123456",
+    "age": 18,
+    "role": "user",
+    "created_at": "2026-03-01T02:03:53.796740"
+  },
+  "2ff3bb4b-9e5f-4560-bd56-8d98b66386fb": {
+    "id": "2ff3bb4b-9e5f-4560-bd56-8d98b66386fb",
+    "name": "om nikam",
+    "phone": null,
+    "shop_id": "123",
+    "password": "123456",
+    "age": null,
+    "role": "admin",
+    "created_at": "2026-03-01T02:04:53.361047"
+  },
+  "ee54520c-aae3-4bb8-8d11-987a2eed54c6": {
+    "id": "ee54520c-aae3-4bb8-8d11-987a2eed54c6",
+    "name": "om nikam",
+    "phone": "8767811377",
+    "shop_id": null,
+    "password": "12345",
+    "age": 18,
+    "role": "user",
+    "created_at": "2026-03-01T02:48:46.108658"
+  },
+  "a9becf73-7770-483c-96f2-f4b36499b418": {
+    "id": "a9becf73-7770-483c-96f2-f4b36499b418",
+    "name": "om",
+    "phone": null,
+    "shop_id": "8767811377",
+    "password": "12345",
+    "age": null,
+    "role": "admin",
+    "created_at": "2026-03-01T02:49:47.395639"
+  },
+  "65ff3055-12b1-401c-8598-5b0e296cb9f0": {
+    "id": "65ff3055-12b1-401c-8598-5b0e296cb9f0",
+    "name": "om nikam",
+    "phone": "87678711377",
+    "shop_id": null,
+    "password": "12345",
+    "age": 18,
+    "role": "user",
+    "created_at": "2026-03-01T04:51:20.839455"
+  },
+  "5348ad23-e270-4fc6-8773-fd1d6c7e98de": {
+    "id": "5348ad23-e270-4fc6-8773-fd1d6c7e98de",
+    "name": "shashvat",
+    "phone": "8830537695",
+    "shop_id": null,
+    "password": "123456",
+    "age": 18,
+    "role": "user",
+    "created_at": "2026-03-01T06:30:41.369760"
+  }
+}
